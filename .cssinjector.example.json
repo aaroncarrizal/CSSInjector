@@ -1,0 +1,7 @@
+{
+  "url": "https://example.com",
+  "dir": "./styles",
+  "include": "**/*.css",
+  "exclude": "",
+  "headless": false
+}

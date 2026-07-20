@@ -1,0 +1,39 @@
+{
+  "name": "css-injector",
+  "version": "1.0.0",
+  "description": "Inject CSS into any website with hot reload support",
+  "type": "module",
+  "bin": {
+    "css-injector": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "cdp": "tsx src/cdp-client.ts",
+    "build": "vite build",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "css",
+    "inject",
+    "hot-reload",
+    "puppeteer",
+    "devtools"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "commander": "^13.1.0",
+    "fast-glob": "^3.3.3",
+    "puppeteer": "^24.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.3"
+  },
+  "allowScripts": {
+    "puppeteer@24.43.1": true
+  }
+}
