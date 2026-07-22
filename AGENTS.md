@@ -56,6 +56,7 @@ The CDP client connects to `http://127.0.0.1:9222` and provides these commands:
 | `highlight <selector>` | Adds red outline to element, takes screenshot, saves to `./debug/` |
 | `eval <expression>` | Evaluates JS in page context, returns JSON result |
 | `list` | JSON with total element count and tag frequency map |
+| `togglestyles <pattern>` | Toggle remote stylesheets by href pattern (strips/restores `<link>` elements) |
 
 ## Key Dependencies
 

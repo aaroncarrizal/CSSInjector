@@ -156,6 +156,48 @@ async function cmdListElements(page: Page) {
   console.log(JSON.stringify(result, null, 2));
 }
 
+async function cmdToggleStyles(page: Page, pattern: string) {
+  const result = await page.evaluate((pat: string) => {
+    const STORE_ID = "css-injector-styles-store";
+    const store = document.getElementById(STORE_ID);
+
+    if (store) {
+      const links = Array.from(store.querySelectorAll("link"));
+      links.forEach((link) => {
+        document.head.appendChild(link.cloneNode(true));
+      });
+      store.remove();
+      return { toggled: "restored", count: links.length };
+    }
+
+    const links = Array.from(
+      document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'),
+    ).filter((link) => link.href.includes(pat));
+
+    if (links.length === 0) {
+      return { toggled: "none", count: 0 };
+    }
+
+    const container = document.createElement("div");
+    container.id = STORE_ID;
+    container.style.display = "none";
+    links.forEach((link) => {
+      container.appendChild(link.cloneNode(true));
+      link.remove();
+    });
+    document.body.appendChild(container);
+    return { toggled: "stripped", count: links.length };
+  }, pattern);
+
+  if (result.toggled === "stripped") {
+    console.log(`[cdp-client] Stripped ${result.count} stylesheet(s) matching "${pattern}"`);
+  } else if (result.toggled === "restored") {
+    console.log(`[cdp-client] Restored ${result.count} stylesheet(s)`);
+  } else {
+    console.log(`[cdp-client] No stylesheets found matching "${pattern}"`);
+  }
+}
+
 function printUsage() {
   console.log(`Usage: npx tsx src/cdp-client.ts <command> [args]
 
@@ -168,6 +210,7 @@ Commands:
   highlight <selector>           Add red outline + screenshot
   eval <expression>              Evaluate JS in page context
   list                           List all element tags and counts
+  togglestyles <pattern>         Toggle remote stylesheets by href pattern
   help                           Show this help`);
 }
 
@@ -224,6 +267,13 @@ async function main() {
         break;
       case "list":
         await cmdListElements(page);
+        break;
+      case "togglestyles":
+        if (!args[1]) {
+          console.error("Usage: cdp-client.ts togglestyles <pattern>");
+          process.exit(1);
+        }
+        await cmdToggleStyles(page, args[1]);
         break;
       default:
         console.error(`Unknown command: ${command}`);

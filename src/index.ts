@@ -66,7 +66,7 @@ program
     console.log(`[css-injector] CSS directory: ${resolve(config.dir)}`);
 
     const browser = await launchBrowser(config.headless);
-    const page = await browser.newPage();
+    const [page] = await browser.pages();
 
     console.log(`[css-injector] CDP available at http://127.0.0.1:9222`);
 
@@ -76,12 +76,24 @@ program
     await injectCSS(page, initialCSS);
     console.log(`[css-injector] Injected ${initialCSS.length} bytes of CSS`);
 
+    let currentCSS = initialCSS;
+
+    page.on("load", async () => {
+      try {
+        await injectCSS(page, currentCSS);
+        console.log(`[css-injector] Re-injected CSS after navigation (${currentCSS.length} bytes)`);
+      } catch (err) {
+        console.error("[css-injector] Error re-injecting CSS:", err);
+      }
+    });
+
     const stopWatching = startWatching({
       dir: config.dir,
       include: config.include,
       exclude: config.exclude,
       onChange: async (css) => {
         try {
+          currentCSS = css;
           await injectCSS(page, css);
           console.log(`[css-injector] CSS updated (${css.length} bytes)`);
         } catch (err) {
