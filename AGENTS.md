@@ -106,6 +106,23 @@ When the user says "help me debug X" (where X is a CSS selector), automatically:
 
 This workflow always runs all three commands regardless of the issue, to ensure full context.
 
+## New Dealer Setup (`/set-up`)
+
+When the user starts with `/set-up` followed by dealer info in this format:
+```
+Dealer Name: <name>
+Site Link: <url>
+FR Link: <number>
+```
+
+Execute:
+
+1. **Parse fields** – Extract Dealer Name, Site Link, FR Link.
+2. **Create git branch** – Convert Dealer Name to kebab-case (lowercase, spaces→hyphens). Check out from master: `git checkout master && git pull && git checkout -b <kebab-name>`.
+3. **Configure `.cssinjector.json`** – Set `url` to the Site Link. Keep `dir`, `include`, `exclude`, `headless` unchanged.
+4. **Ensure `./styles` directory exists** (create if missing).
+5. **Report** – Tell the user the branch name and configured URL.
+
 ## Notes
 
 - The tool uses `channel: "chrome"` to use the system Chrome installation (not Puppeteer's bundled Chromium)
