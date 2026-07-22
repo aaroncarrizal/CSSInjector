@@ -1,0 +1,22 @@
+/* /snippets/css/manufacturers-box */
+/* =============================================
+    Manufacturers Box
+=============================================== */
+.manufacturers .mfgIcons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.manufacturers .mfgIcons a {
+    aspect-ratio: 4/3;
+    width: calc(25% - 8px);
+    height: auto;
+    display: grid;
+    place-content: center;
+    padding: 0 4px;
+    margin: 0 4px 8px;
+    background: #e5e5e5;
+    background: linear-gradient(to bottom, #ffffff 0%, #e5e5e5 100%);
+    border-radius: 10px;
+}
