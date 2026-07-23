@@ -3,5 +3,6 @@
   "dir": "./styles",
   "include": "**/*.css",
   "exclude": "",
-  "headless": false
+  "headless": false,
+  "stripPatterns": ["//assets.interactcp.com"]
 }

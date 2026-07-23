@@ -3,7 +3,7 @@
 import { Command } from "commander";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { launchBrowser, navigateTo, injectCSS } from "./injector.js";
+import { launchBrowser, navigateTo, injectCSS, stripRemoteStyles } from "./injector.js";
 import { readCSSFiles } from "./css-processor.js";
 import { startWatching } from "./watcher.js";
 import { DEFAULT_CONFIG } from "./types.js";
@@ -45,6 +45,7 @@ program
   .option("-i, --include <glob>", "Include glob pattern")
   .option("-e, --exclude <glob>", "Exclude glob pattern")
   .option("--headless", "Run in headless mode")
+  .option("-s, --strip-patterns <patterns>", "Comma-separated patterns to strip remote stylesheets by href")
   .action(async (cliOptions) => {
     const fileConfig = await loadConfigFile();
 
@@ -54,6 +55,7 @@ program
     if (cliOptions.include) cliArgs.include = cliOptions.include;
     if (cliOptions.exclude) cliArgs.exclude = cliOptions.exclude;
     if (cliOptions.headless !== undefined) cliArgs.headless = cliOptions.headless;
+    if (cliOptions.stripPatterns) cliArgs.stripPatterns = cliOptions.stripPatterns.split(",");
 
     const config = mergeConfig(fileConfig, cliArgs);
 
@@ -72,6 +74,8 @@ program
 
     await navigateTo(page, config.url);
 
+    await stripRemoteStyles(page, config.stripPatterns);
+
     const initialCSS = await readCSSFiles(config.dir, config.include, config.exclude);
     await injectCSS(page, initialCSS);
     console.log(`[css-injector] Injected ${initialCSS.length} bytes of CSS`);
@@ -80,6 +84,7 @@ program
 
     page.on("load", async () => {
       try {
+        await stripRemoteStyles(page, config.stripPatterns);
         await injectCSS(page, currentCSS);
         console.log(`[css-injector] Re-injected CSS after navigation (${currentCSS.length} bytes)`);
       } catch (err) {

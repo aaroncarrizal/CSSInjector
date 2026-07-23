@@ -30,3 +30,23 @@ export async function injectCSS(page: Page, css: string): Promise<void> {
     style.textContent = cssContent;
   }, css);
 }
+
+export async function stripRemoteStyles(page: Page, patterns: string[]): Promise<void> {
+  if (patterns.length === 0) return;
+
+  const count = await page.evaluate((pats: string[]) => {
+    const links = Array.from(
+      document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'),
+    ).filter((link) =>
+      link.href.endsWith(".default.css") &&
+      pats.some((pat) => link.href.includes(pat)),
+    );
+
+    links.forEach((link) => link.remove());
+    return links.length;
+  }, patterns);
+
+  if (count > 0) {
+    console.log(`[css-injector] Stripped ${count} remote .default.css stylesheet(s) matching configured patterns`);
+  }
+}

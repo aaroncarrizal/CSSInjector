@@ -123,6 +123,16 @@ Execute:
 4. **Ensure `./styles` directory exists** (create if missing).
 5. **Report** – Tell the user the branch name and configured URL.
 
+## List of Fixes Workflow
+
+When the user provides a numbered list of CSS fixes/features to apply to the target site:
+
+1. **Read the existing styles** – Read all CSS files in `./styles/` to understand current state.
+2. **Process each item sequentially** – Start from item 1 and work through the list in order. Each fix gets implemented, added to a CSS file in `./styles/`, verified via the CDP client if needed.
+3. **Commit each task separately** – After completing each item, commit with a message describing the fix (e.g., "fix: add hover to dealer logo on header"). Use `git add -A` and `git commit -m "..."`.
+4. **Unresolvable issues** – If an issue cannot be resolved (missing element, unclear requirement, technical limitation), note it in the final report and move to the next item.
+5. **Report** – After processing all items, report back with a summary of what was completed and any TODOs left behind.
+
 ## Notes
 
 - The tool uses `channel: "chrome"` to use the system Chrome installation (not Puppeteer's bundled Chromium)

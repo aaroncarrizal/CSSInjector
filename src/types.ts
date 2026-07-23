@@ -6,6 +6,7 @@ export interface Config {
   include: string;
   exclude: string;
   headless: boolean;
+  stripPatterns: string[];
 }
 
 export interface InjectorState {
@@ -21,4 +22,5 @@ export const DEFAULT_CONFIG: Config = {
   include: "**/*.css",
   exclude: "",
   headless: false,
+  stripPatterns: [],
 };
