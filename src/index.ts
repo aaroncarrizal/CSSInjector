@@ -46,6 +46,8 @@ program
   .option("-e, --exclude <glob>", "Exclude glob pattern")
   .option("--headless", "Run in headless mode")
   .option("-s, --strip-patterns <patterns>", "Comma-separated patterns to strip remote stylesheets by href")
+  .option("-u, --username <username>", "HTTP Basic Auth username")
+  .option("-p, --password <password>", "HTTP Basic Auth password")
   .action(async (cliOptions) => {
     const fileConfig = await loadConfigFile();
 
@@ -56,6 +58,8 @@ program
     if (cliOptions.exclude) cliArgs.exclude = cliOptions.exclude;
     if (cliOptions.headless !== undefined) cliArgs.headless = cliOptions.headless;
     if (cliOptions.stripPatterns) cliArgs.stripPatterns = cliOptions.stripPatterns.split(",");
+    if (cliOptions.username) cliArgs.username = cliOptions.username;
+    if (cliOptions.password) cliArgs.password = cliOptions.password;
 
     const config = mergeConfig(fileConfig, cliArgs);
 
@@ -72,7 +76,7 @@ program
 
     console.log(`[css-injector] CDP available at http://127.0.0.1:9222`);
 
-    await navigateTo(page, config.url);
+    await navigateTo(page, config.url, { username: config.username ?? "", password: config.password ?? "" });
 
     await stripRemoteStyles(page, config.stripPatterns);
 

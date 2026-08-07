@@ -11,7 +11,15 @@ export async function launchBrowser(headless: boolean): Promise<Browser> {
   });
 }
 
-export async function navigateTo(page: Page, url: string): Promise<void> {
+export interface BasicAuth {
+  username: string;
+  password: string;
+}
+
+export async function navigateTo(page: Page, url: string, auth?: BasicAuth): Promise<void> {
+  if (auth && auth.username) {
+    await page.authenticate({ username: auth.username, password: auth.password });
+  }
   await page.goto(url, { waitUntil: "networkidle2" });
 }
 

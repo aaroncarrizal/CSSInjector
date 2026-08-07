@@ -7,6 +7,8 @@ export interface Config {
   exclude: string;
   headless: boolean;
   stripPatterns: string[];
+  username?: string;
+  password?: string;
 }
 
 export interface InjectorState {
@@ -23,4 +25,6 @@ export const DEFAULT_CONFIG: Config = {
   exclude: "",
   headless: false,
   stripPatterns: [],
+  username: "",
+  password: "",
 };
