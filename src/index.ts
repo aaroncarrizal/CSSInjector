@@ -46,8 +46,8 @@ program
   .option("-e, --exclude <glob>", "Exclude glob pattern")
   .option("--headless", "Run in headless mode")
   .option("-s, --strip-patterns <patterns>", "Comma-separated patterns to strip remote stylesheets by href")
-  .option("-u, --username <username>", "HTTP Basic Auth username")
-  .option("-p, --password <password>", "HTTP Basic Auth password")
+  .option("--username <username>", "HTTP Basic Auth username")
+  .option("--password <password>", "HTTP Basic Auth password")
   .action(async (cliOptions) => {
     const fileConfig = await loadConfigFile();
 
