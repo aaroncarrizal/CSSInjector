@@ -1,0 +1,45 @@
+/* /snippets/css/flush-next-section */
+/* ==============================================
+   Pattern: next section renders flush under the hero
+   ============================================== */
+/* Goal: the section right after the hero (e.g. the categories
+   bar / .home-types-bar) starts exactly where the hero ends,
+   with zero gap, on every viewport.
+
+   Why margin-top = hero height - nav height:
+   - The hero is position:absolute (out of flow), so the next
+     section in flow still begins right after the header + nav.
+   - The hero visually occupies hero-height px below the header.
+   - To make the next section start where the hero's bottom edge
+     is, push it down by (hero height) but it is already pushed
+     by the in-flow nav, so subtract --nav-height.
+   - Do NOT use header-height in this calc — the hero's own top
+     is already offset by --header-height. (That was the original
+     off-by-one bug.)
+*/
+
+.homepage .home-types-bar {
+    background: #051220;
+    padding: 10vh 0;
+}
+
+/* Mobile: element renders in normal flow, no offset */
+@media (max-width: 991px) {
+    .homepage .home-types-bar { margin-top: 0; }
+}
+
+/* Desktop: flush under a 50vh hero */
+@media (min-width: 992px) {
+    .homepage .home-types-bar {
+        margin-top: calc(50vh - var(--nav-height));
+    }
+}
+
+/* Small laptop / short viewports: hero is 60vh there, so reuse
+   the same formula with the taller height. Must come AFTER the
+   base rule so the cascade wins. */
+@media (min-width: 992px) and (max-height: 800px) {
+    .homepage .home-types-bar {
+        margin-top: calc(60vh - var(--nav-height));
+    }
+}

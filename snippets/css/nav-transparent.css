@@ -1,0 +1,44 @@
+/* /snippets/css/nav-transparent */
+/* ==============================================
+   Pattern: Transparent navbar floating over hero
+   ============================================== */
+/* Goal: the navbar has no background and sits ON TOP of the
+   hero image (hero is position:absolute with a lower z-index),
+   so nav links must be white with a text-shadow for readability.
+
+   Scope these under the page you are styling (e.g. .homepage)
+   so the transparent nav only applies there. */
+
+/* 1) Transparent nav background */
+.homepage #main-nav { background-color: transparent; }
+
+/* 2) White links + text shadow for readability over the photo */
+.homepage #main-nav .navbar-nav a{
+    color: white;
+    text-transform: uppercase;
+    font-family: 'Jost', sans-serif;
+    font-weight: 500;
+    font-size: clamp(16.2px, 0.9375vw, 18px);
+    text-shadow: 2px 2px 4px black;
+}
+
+/* 3) Dropdowns must go back to dark text on white (no shadow) */
+.homepage #main-nav .navbar-nav .dropdown-menu a{color: black; text-shadow: none; }
+.homepage #main-nav .navbar-nav .dropdown-menu a:hover{color: white; text-shadow: none; }
+
+/* 4) Mobile fallback: below the desktop breakpoint the nav is no
+      longer over the hero, so use dark links with a light hover. */
+@media (max-width: 992px) {
+    .homepage #main-nav .navbar-nav a {
+        color: black;
+        text-shadow: none;
+    }
+    .homepage #main-nav .navbar-nav > li > a:hover,
+    .homepage #main-nav .navbar-nav > li > a:focus,
+    .homepage #main-nav .navbar-nav > .open > a,
+    .homepage #main-nav .navbar-nav > .open > a:hover,
+    .homepage #main-nav .navbar-nav > .open > a:focus {
+        background: rgba(255, 255, 255, 0.8);
+        color: black;
+    }
+}

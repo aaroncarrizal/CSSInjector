@@ -133,6 +133,21 @@ When the user provides a numbered list of CSS fixes/features to apply to the tar
 4. **Unresolvable issues** – If an issue cannot be resolved (missing element, unclear requirement, technical limitation), note it in the final report and move to the next item.
 5. **Report** – After processing all items, report back with a summary of what was completed and any TODOs left behind.
 
+## Reusable CSS Snippets
+
+Reusable, proven CSS patterns live in `snippets/css/` (NOT `styles/`). Copy the relevant pattern into a `styles/` file when a fix requires it, keeping the scoping selector (e.g. `.homepage`) intact.
+
+| File | Pattern |
+|------|---------|
+| `nav-transparent.css` | Transparent navbar floating over a hero: white links + text-shadow, dark dropdowns, mobile fallback |
+| `hero-overlay.css` | Hero pinned below the header as an absolute overlay: `top: var(--header-height) !important`, `min-height: 0`, 50vh (60vh on short viewports), hidden below 992px |
+| `flush-next-section.css` | Next section renders flush under the hero: `margin-top: calc(50vh - var(--nav-height))` (60vh on short viewports) |
+
+Key gotchas captured in these snippets:
+- The site's bundled CSS may ship `top: 7vh !important` on the hero at 992–1200px — override with `!important`.
+- `--header-height` (site-defined) vs `--nav-height` (ours, 62px/66px) are different values; the flush margin formula subtracts `--nav-height`, never `--header-height`.
+- Short-viewport (`max-height: 800px`) overrides must be placed after the base rules so the cascade wins.
+
 ## Notes
 
 - The tool uses `channel: "chrome"` to use the system Chrome installation (not Puppeteer's bundled Chromium)
