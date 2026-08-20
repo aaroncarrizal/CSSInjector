@@ -38,8 +38,14 @@ Config is loaded from `.cssinjector.json` in the project root. CLI flags overrid
   "dir": "./styles",
   "include": "**/*.css",
   "exclude": "",
-  "headless": false
+  "headless": false,
+  "stripPatterns": [],
+  "username": "",
+  "password": ""
 }
+```
+
+- `username` / `password` – HTTP Basic Auth credentials. Leave empty (`""`) to disable auth. Both the injector and CDP client read these values.
 ```
 
 ## CDP Client Commands
@@ -119,7 +125,7 @@ Execute:
 
 1. **Parse fields** – Extract Dealer Name, Site Link, FR Link.
 2. **Create git branch** – Convert Dealer Name to kebab-case (lowercase, spaces→hyphens). Check out from master: `git checkout master && git pull && git checkout -b <kebab-name>`.
-3. **Configure `.cssinjector.json`** – Set `url` to the Site Link. Keep `dir`, `include`, `exclude`, `headless` unchanged.
+3. **Configure `.cssinjector.json`** – Set `url` to the Site Link. Set `username: "interactrv"` and `password: "access"` for HTTP Basic Auth (leave empty if the site doesn't need auth). Keep `dir`, `include`, `exclude`, `headless` unchanged.
 4. **Ensure `./styles` directory exists** (create if missing).
 5. **Report** – Tell the user the branch name and configured URL.
 

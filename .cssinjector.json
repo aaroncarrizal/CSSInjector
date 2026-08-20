@@ -4,5 +4,7 @@
   "include": "**/*.css",
   "exclude": "",
   "headless": false,
-  "stripPatterns": ["//assets.interactcp.com"]
+  "stripPatterns": ["//assets.interactcp.com"],
+  "username": "interactrv",
+  "password": "access"
 }

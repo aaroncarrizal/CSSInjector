@@ -1,6 +1,6 @@
 ---
 name: new-dealer-setup
-description: Use when the user provides dealer information (Dealer Name, Site Link, FR Link) to set up a new dealer project. Creates a git branch and configures .cssinjector.json.
+description: Use when the user provides dealer information (Dealer Name, Site Link, FR Link) or starts with /set-up. Creates a git branch and configures .cssinjector.json with auth defaults.
 ---
 
 # New Dealer Setup
@@ -35,14 +35,17 @@ git checkout -b <dealer-name-kebab>
 ```
 
 ### 3. Configure `.cssinjector.json`
-Set the `url` field to the **Site Link** value. Keep all other fields unchanged:
+Set the `url` field to the **Site Link** value. Set `username` and `password` for HTTP Basic Auth (leave empty if the site doesn't need auth):
 ```json
 {
   "url": "<site-link>",
   "dir": "./styles",
   "include": "**/*.css",
   "exclude": "",
-  "headless": false
+  "headless": false,
+  "stripPatterns": [],
+  "username": "interactrv",
+  "password": "access"
 }
 ```
 

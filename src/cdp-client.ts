@@ -1,14 +1,29 @@
 #!/usr/bin/env node
 
 import puppeteer, { type Browser, type Page } from "puppeteer";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 
 const CDP_URL = "http://127.0.0.1:9222";
 const DEBUG_DIR = resolve("./debug");
+const CONFIG_FILE = resolve(".cssinjector.json");
 
 async function ensureDir(filePath: string) {
   await mkdir(dirname(filePath), { recursive: true });
+}
+
+async function loadAuth(): Promise<{ username: string; password: string }> {
+  try {
+    const raw = await readFile(CONFIG_FILE, "utf-8");
+    const config = JSON.parse(raw);
+    return {
+      username: config.username ?? "",
+      password: config.password ?? "",
+    };
+  } catch {
+    return { username: "", password: "" };
+  }
 }
 
 async function connect() {
@@ -24,7 +39,12 @@ async function connect() {
 
 async function getPage(browser: Browser) {
   const pages = await browser.pages();
-  return pages[0];
+  const page = pages[0];
+  const auth = await loadAuth();
+  if (auth.username) {
+    await page.authenticate(auth);
+  }
+  return page;
 }
 
 async function cmdScreenshot(

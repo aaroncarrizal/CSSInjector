@@ -3,7 +3,7 @@
   "skills": {
     "new-dealer-setup": {
       "name": "new-dealer-setup",
-      "description": "Use when the user provides dealer information (Dealer Name, Site Link, FR Link) to set up a new dealer project. Creates a git branch from master and configures .cssinjector.json."
+      "description": "Use when the user provides dealer information (Dealer Name, Site Link, FR Link) or starts with /set-up. Creates a git branch and configures .cssinjector.json with auth defaults."
     }
   }
 }
