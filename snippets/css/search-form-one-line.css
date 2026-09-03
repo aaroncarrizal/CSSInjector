@@ -1,0 +1,40 @@
+/* /snippets/css/search-form-one-line */
+/* =============================================
+    Search Form - One Line Layout
+    Forces a multi-field search form (#topSearchForm / .SearchPanel)
+    onto a single horizontal line at desktop widths.
+=============================================== */
+#topSearchForm {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: flex-end !important;
+  justify-content: center;
+  gap: 10px;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 auto 40px;
+}
+
+#topSearchForm .form-group.SearchRow {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0;
+  margin: 0 !important;
+  vertical-align: middle;
+}
+
+#topSearchForm .form-group.SearchRow select,
+#topSearchForm .SearchStockNumber {
+  width: 100% !important;
+  margin: 0;
+}
+
+#topSearchForm .SearchButton {
+  flex: 0 0 auto;
+  margin: 0;
+  white-space: nowrap;
+}

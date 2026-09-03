@@ -148,11 +148,14 @@ Reusable, proven CSS patterns live in `snippets/css/` (NOT `styles/`). Copy the 
 | `nav-transparent.css` | Transparent navbar floating over a hero: white links + text-shadow, dark dropdowns, mobile fallback |
 | `hero-overlay.css` | Hero pinned below the header as an absolute overlay: `top: var(--header-height) !important`, `min-height: 0`, 50vh (60vh on short viewports), hidden below 992px |
 | `flush-next-section.css` | Next section renders flush under the hero: `margin-top: calc(50vh - var(--nav-height))` (60vh on short viewports) |
+| `search-form-one-line.css` | Lays a multi-field search form (`#topSearchForm` / `.SearchPanel`) onto one horizontal line: `display: flex !important` + `flex-wrap: nowrap`, equal-width rows |
 
 Key gotchas captured in these snippets:
 - The site's bundled CSS may ship `top: 7vh !important` on the hero at 992–1200px — override with `!important`.
 - `--header-height` (site-defined) vs `--nav-height` (ours, 62px/66px) are different values; the flush margin formula subtracts `--nav-height`, never `--header-height`.
 - Short-viewport (`max-height: 800px`) overrides must be placed after the base rules so the cascade wins.
+- Search-form rows: bundled CSS makes the form `display: inline-block` at desktop and the `SearchRow`s `display: inline-block`, which lets the last rows + button wrap to a second line. Force `display: flex !important` on the form with `flex-wrap: nowrap` and make each row `flex: 1 1 0 !important` so they share the line. The `display` values on the form/rows are overridden by bundled rules, so `!important` is required.
+- Debugging responsively: the CDP client connects to `pages[0]`; if a DevTools tab is open it's the first page, so the debugger targets DevTools instead of the site. When testing responsive layouts, verify at a real desktop width (e.g. CDP `Emulation.setDeviceMetricsOverride`), not the DevTools-docked viewport.
 
 ## Notes
 
