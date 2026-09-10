@@ -1,0 +1,34 @@
+/* /snippets/css/dropdown-single-tap */
+/* =============================================
+    Bootstrap Navbar Dropdown - Single Tap on Mobile
+    Fixes: sub-dropdowns in the header menu only expand on the
+    second tap at widths below 768px ("double-click to open").
+
+    Root cause: the site's bundled inline jQuery binds a hover
+    handler to each li.dropdown:
+        $('li.dropdown').hover(onIn, onOut);   // adds/removes .open
+    On a touch tap the browser fires mouseenter first, so jQuery
+    adds .open, then the click event fires and Bootstrap's
+    data-toggle="dropdown" handler toggles .open back off.
+    Net result: one tap leaves the menu closed; a second tap opens it.
+
+    Fix: on mobile the dropdown is shown by the sticky touch
+    :hover state (which persists after a tap) instead of relying
+    on the .open class. This matches the behaviour the site's own
+    CSS already provides at >= 768px, so the whole menu behaves
+    consistently with a single tap. Below 768px the menu must also
+    be forced in-flow (position: static) so it does not overlay the
+    content underneath.
+
+    Verified with real touch events (page.touchscreen.tap,
+    viewport hasTouch: true) at 360 / 414 / 768 / 991 / 1024 px:
+    single tap opens the sub-menu at every width on this pattern.
+=============================================== */
+@media (max-width: 767.98px) {
+  ul.nav li.dropdown:hover > ul.dropdown-menu {
+    display: block !important;
+    position: static;
+    float: none;
+    width: 100%;
+  }
+}
