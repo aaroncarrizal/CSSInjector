@@ -6,20 +6,24 @@ export interface WatcherOptions {
   dir: string;
   include: string;
   exclude: string;
-  onChange: (css: string) => void;
+  onChange: (content: string) => void;
+  reader?: (dir: string, include: string, exclude: string) => Promise<string>;
 }
+
+type FileReader = (dir: string, include: string, exclude: string) => Promise<string>;
 
 export function startWatching(options: WatcherOptions): () => void {
   const { dir, include, exclude, onChange } = options;
+  const reader: FileReader = options.reader ?? readCSSFiles;
   const watchPath = resolve(dir);
   let debounceTimer: NodeJS.Timeout | null = null;
 
   const readAndUpdate = async () => {
     try {
-      const css = await readCSSFiles(watchPath, include, exclude);
-      onChange(css);
+      const content = await reader(watchPath, include, exclude);
+      onChange(content);
     } catch (err) {
-      console.error("[css-injector] Error reading CSS files:", err);
+      console.error(`[css-injector] Error reading files in ${watchPath}:`, err);
     }
   };
 

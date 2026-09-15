@@ -20,13 +20,20 @@ CSS Injector is a CLI tool that uses Puppeteer to open a target URL in Chrome, i
 
 ```
 src/
-├── index.ts          # CLI entry point (commander). Loads config, launches browser, injects CSS, starts watcher, logs CDP endpoint.
-├── injector.ts       # Puppeteer browser launch (with debuggingPort: 9222), navigation, and <style> injection via page.evaluate().
+├── index.ts          # CLI entry point (commander). Loads config, launches browser, injects CSS + JS, starts watchers, logs CDP endpoint.
+├── injector.ts       # Puppeteer browser launch (with debuggingPort: 9222), navigation, <style> injection via page.evaluate(), and <script id="js-injector"> injection.
 ├── css-processor.ts  # Reads CSS files from disk using fast-glob + readFile. Returns concatenated string.
-├── watcher.ts        # Chokidar file watcher. Watches CSS directory, debounces 100ms, calls onChange callback.
+├── js-processor.ts   # Reads JS files (scripts/) from disk, same approach as css-processor.
+├── watcher.ts        # Chokidar file watcher. Watches a directory, debounces 100ms, calls onChange callback. Accepts a custom `reader` (CSS or JS).
 ├── cdp-client.ts     # Standalone script that connects to running Chrome via CDP (http://127.0.0.1:9222). Supports screenshot, styles, html, select, highlight, eval, list commands.
 └── types.ts          # Config interface and defaults.
 ```
+
+## Script Injection
+
+Alongside CSS, the injector reads every `**/*.js` file in `./scripts/` (config: `jsDir` / `jsInclude`, defaults `"./scripts"` / `"**/*.js"`) and injects it as a `<script id="js-injector">` in the page head. Scripts are re-injected on navigation and hot-reloaded when a scripts file changes (the element is removed and re-created so the code re-runs each time).
+
+Use this for DOM fixes that CSS alone cannot reach (cleaning a widget attribute, rewiring a broken API interaction, etc.). Keep scripts scoped/guarded (IIFE) since they run inside the target page. Example: `scripts/strip-ai-lot-param.js` removes a leftover `lots=NNNN` from the AI search widget's `data-base-params`, which otherwise gets appended to the `/search-assistant` URL by `ai-search-cta.js buildTargetUrl()`.
 
 ## Config
 

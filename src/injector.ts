@@ -39,6 +39,19 @@ export async function injectCSS(page: Page, css: string): Promise<void> {
   }, css);
 }
 
+export async function injectScripts(page: Page, js: string): Promise<void> {
+  await page.evaluate((jsContent: string) => {
+    const SCRIPT_ID = "js-injector";
+
+    document.getElementById(SCRIPT_ID)?.remove();
+
+    const script = document.createElement("script");
+    script.id = SCRIPT_ID;
+    script.textContent = jsContent;
+    (document.head || document.documentElement).appendChild(script);
+  }, js);
+}
+
 export async function stripRemoteStyles(page: Page, patterns: string[]): Promise<void> {
   if (patterns.length === 0) return;
 

@@ -39,7 +39,8 @@ async function connect() {
 
 async function getPage(browser: Browser) {
   const pages = await browser.pages();
-  const page = pages[0];
+  const page =
+    pages.find((p) => !p.url().startsWith("devtools://")) ?? pages[0];
   const auth = await loadAuth();
   if (auth.username) {
     await page.authenticate(auth);

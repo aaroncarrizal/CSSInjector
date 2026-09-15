@@ -3,8 +3,9 @@
 import { Command } from "commander";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { launchBrowser, navigateTo, injectCSS, stripRemoteStyles } from "./injector.js";
+import { launchBrowser, navigateTo, injectCSS, injectScripts, stripRemoteStyles } from "./injector.js";
 import { readCSSFiles } from "./css-processor.js";
+import { readJSFiles } from "./js-processor.js";
 import { startWatching } from "./watcher.js";
 import { DEFAULT_CONFIG } from "./types.js";
 import type { Config } from "./types.js";
@@ -84,15 +85,23 @@ program
     await injectCSS(page, initialCSS);
     console.log(`[css-injector] Injected ${initialCSS.length} bytes of CSS`);
 
+    const initialJS = await readJSFiles(config.jsDir ?? "./scripts", config.jsInclude ?? "**/*.js");
+    await injectScripts(page, initialJS);
+    if (initialJS.length > 0) {
+      console.log(`[css-injector] Injected ${initialJS.length} bytes of JS`);
+    }
+
     let currentCSS = initialCSS;
+    let currentJS = initialJS;
 
     page.on("load", async () => {
       try {
         await stripRemoteStyles(page, config.stripPatterns);
         await injectCSS(page, currentCSS);
-        console.log(`[css-injector] Re-injected CSS after navigation (${currentCSS.length} bytes)`);
+        await injectScripts(page, currentJS);
+        console.log(`[css-injector] Re-injected CSS (${currentCSS.length} bytes) + JS (${currentJS.length} bytes) after navigation`);
       } catch (err) {
-        console.error("[css-injector] Error re-injecting CSS:", err);
+        console.error("[css-injector] Error re-injecting CSS/JS:", err);
       }
     });
 
@@ -111,11 +120,28 @@ program
       },
     });
 
-    console.log("[css-injector] Watching for CSS changes. Press Ctrl+C to stop.");
+    const stopWatchingJS = startWatching({
+      dir: config.jsDir ?? "./scripts",
+      include: config.jsInclude ?? "**/*.js",
+      exclude: "",
+      reader: readJSFiles,
+      onChange: async (js) => {
+        try {
+          currentJS = js;
+          await injectScripts(page, js);
+          console.log(`[css-injector] JS updated (${js.length} bytes)`);
+        } catch (err) {
+          console.error("[css-injector] Error updating JS:", err);
+        }
+      },
+    });
+
+    console.log("[css-injector] Watching for CSS/JS changes. Press Ctrl+C to stop.");
 
     const cleanup = async () => {
       console.log("\n[css-injector] Shutting down...");
       stopWatching();
+      stopWatchingJS();
       await browser.close();
       process.exit(0);
     };

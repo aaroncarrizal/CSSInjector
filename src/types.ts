@@ -9,6 +9,8 @@ export interface Config {
   stripPatterns: string[];
   username?: string;
   password?: string;
+  jsDir?: string;
+  jsInclude?: string;
 }
 
 export interface InjectorState {
@@ -27,4 +29,6 @@ export const DEFAULT_CONFIG: Config = {
   stripPatterns: [],
   username: "",
   password: "",
+  jsDir: "./scripts",
+  jsInclude: "**/*.js",
 };
