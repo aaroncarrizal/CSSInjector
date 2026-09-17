@@ -20,8 +20,8 @@ CSS Injector is a CLI tool that uses Puppeteer to open a target URL in Chrome, i
 
 ```
 src/
-├── index.ts          # CLI entry point (commander). Loads config, launches browser, injects CSS + JS, starts watchers, logs CDP endpoint.
-├── injector.ts       # Puppeteer browser launch (with debuggingPort: 9222), navigation, <style> injection via page.evaluate(), and <script id="js-injector"> injection.
+├── index.ts          # CLI entry point (commander). Loads config, launches browser, registers scripts for new documents, injects CSS, starts watchers, logs CDP endpoint.
+├── injector.ts       # Puppeteer browser launch (with debuggingPort: 9222), navigation, <style> injection via page.evaluate(), <script id="js-injector"> injection for hot reload, and Page.addScriptToEvaluateOnNewDocument registration.
 ├── css-processor.ts  # Reads CSS files from disk using fast-glob + readFile. Returns concatenated string.
 ├── js-processor.ts   # Reads JS files (scripts/) from disk, same approach as css-processor.
 ├── watcher.ts        # Chokidar file watcher. Watches a directory, debounces 100ms, calls onChange callback. Accepts a custom `reader` (CSS or JS).
@@ -31,9 +31,15 @@ src/
 
 ## Script Injection
 
-Alongside CSS, the injector reads every `**/*.js` file in `./scripts/` (config: `jsDir` / `jsInclude`, defaults `"./scripts"` / `"**/*.js"`) and injects it as a `<script id="js-injector">` in the page head. Scripts are re-injected on navigation and hot-reloaded when a scripts file changes (the element is removed and re-created so the code re-runs each time).
+Alongside CSS, the injector reads every `**/*.js` file in `./scripts/` (config: `jsDir` / `jsInclude`, defaults `"./scripts"` / `"**/*.js"`) and concatenates them into one bundle. That bundle is registered with CDP `Page.addScriptToEvaluateOnNewDocument`, so it runs on **every new document at the very start — before the page's own scripts**. On a scripts-file change the registration is swapped and the bundle is also re-injected as a `<script id="js-injector">` element into the open page so hot reload applies without navigating.
 
-Use this for DOM fixes that CSS alone cannot reach (cleaning a widget attribute, rewiring a broken API interaction, etc.). Keep scripts scoped/guarded (IIFE) since they run inside the target page. Example: `scripts/strip-ai-lot-param.js` removes a leftover `lots=NNNN` from the AI search widget's `data-base-params`, which otherwise gets appended to the `/search-assistant` URL by `ai-search-cta.js buildTargetUrl()`.
+Use this for DOM fixes that CSS alone cannot reach (cleaning a widget attribute, rewiring a broken API interaction, etc.). Keep scripts scoped/guarded (IIFE) since they run inside the target page, and make them idempotent — they execute at document-start AND may re-run on hot reload. Safe early-run pattern: return immediately if the DOM isn't ready and register a `DOMContentLoaded`/`load` handler (see `scripts/strip-ai-lot-param.js`, `scripts/default-filters-tab.js`). Example: `scripts/strip-ai-lot-param.js` removes a leftover `lots=NNNN` from the AI search widget's `data-base-params`, which otherwise gets appended to the `/search-assistant` URL by `ai-search-cta.js buildTargetUrl()`.
+
+Gotcha — timing-critical fixes need document-start: the site's DOMContentLoaded handlers run (and can crash) before the old `load`-event injection point, so a fix that must run *before* them (e.g. guarding a crash) only works via the `addScriptToEvaluateOnNewDocument` path. Note `window.jQuery` is not defined at document-start even though the page uses it — either guard code to run when jQuery appears (`DOMContentLoaded`/`load`/polling) or avoid jQuery in early fixes.
+
+Gotcha — hero Search button dead: the hero macro renders duplicate `id="topSearchForm"` elements (an outer shell div holding the tabs + AI widget + a hidden orphan Search button, and an inner div with the actual filter selects + the visible Search button). The site's own script binds `$('#topSearchForm').find('.SearchButton')` to the FIRST `#topSearchForm` (the shell), so only the orphan gets a handler and the visible button does nothing. Fix: `scripts/search-button-fix.js` rebinds **every** `.collapse.home-hero-search #topSearchForm .SearchButton` with equivalent `/rv-search?s=true&...` navigation (bind all — `querySelector` alone catches the hidden duplicate macro's button, which is `display:none` but still fires on a programmatic click).
+
+Gotcha — listing carousels render stacked: on `/rv-search` the site's ready batch calls `.attr("name").toLowerCase()` over `:input` collections with no missing-name guard; a nameless control makes it throw and **jQuery 1.8.3 aborts the rest of that ready batch**, so the static-unit Cycle2 init never runs and every `.unit-media-wrapper` shows its slides stacked vertically (wrapper ~1035px tall instead of ~250px). Two independent playwrights: `scripts/name-unnamed-inputs.js` names unnamed controls to keep the crash from firing (observer + a timing-free `getAttribute("name")` guard + a `$.fn.attr` hook), and `scripts/fix-unit-carousels.js` simply re-runs Cycle2 init (`$(el).cycle()`) on any uninitialized `.cycle-slideshow` after load — the deterministic fix, since the crash itself is the site's bug (reproduces on a clean browser with no injector).
 
 ## Config
 
@@ -165,6 +171,23 @@ Key gotchas captured in these snippets:
 - Search-form rows: bundled CSS makes the form `display: inline-block` at desktop and the `SearchRow`s `display: inline-block`, which lets the last rows + button wrap to a second line. Force `display: flex !important` on the form with `flex-wrap: nowrap` and make each row `flex: 1 1 0 !important` so they share the line. The `display` values on the form/rows are overridden by bundled rules, so `!important` is required.
 - Dropdown double-tap on mobile: a bundled inline jQuery `hover` handler on `li.dropdown` adds `.open` on tap (via `mouseenter`) and Bootstrap's click toggle then removes it — one tap nets out closed. Fix via sticky touch `:hover` display (see `dropdown-single-tap.css`); never re-add `.open` styling to mobile, and force `position: static` below 768px so the menu stays in-flow.
 - Debugging responsively: the CDP client connects to `pages[0]`; if a DevTools tab is open it's the first page, so the debugger targets DevTools instead of the site. When testing responsive layouts, verify at a real desktop width (e.g. CDP `Emulation.setDeviceMetricsOverride`), not the DevTools-docked viewport.
+
+## Reusable JS Snippets
+
+Reusable, proven DOM/JS fixes live in `snippets/js/` (NOT `scripts/`). Copy the relevant file into `scripts/` when a fix requires it — the injector will then register it for every new document. All snippets are guarded IIFEs and safe to run repeatedly (document-start + hot reload).
+
+| File | Pattern |
+|------|---------|
+| `name-unnamed-inputs.js` | Keeps a site crash from firing: names every unnamed form control via a MutationObserver, a timing-free `Element.prototype.getAttribute("name")` guard, and a `$.fn.attr("name")` hook. Use when the site does unguarded `.attr("name").toLowerCase()`. |
+| `fix-unit-carousels.js` | Re-runs Cycle2 init (`$(el).cycle()`) on any `.cycle-slideshow` that never initialized (no `.cycle-slide-active`). Deterministic fix when the site's own ready batch aborts before its carousel init. |
+| `search-button-fix.js` | Rebinds every `.collapse.home-hero-search #topSearchForm .SearchButton` to navigate `/rv-search?s=true&...` (works around the site binding only the first duplicate-id form's orphan button). |
+| `default-filters-tab.js` | Forces the AI-search widget's Filters tab as the default mode and clears a persisted tab choice. |
+| `strip-ai-lot-param.js` | Removes a stray `lots=NNNN` from the AI search widget's `data-base-params` before submit. |
+
+Snippet gotchas:
+- Early (document-start) scripts must not assume jQuery or DOM exists — `window.jQuery` is undefined on new documents; install jQuery hooks when it appears (poll / `DOMContentLoaded` / `load`).
+- A `MutationObserver` callback runs on a later microtask, so it cannot patch DOM the page inserts and reads *synchronously in the same task* (e.g. swap form HTML then submit). Prefer a getter/prototype guard for those.
+- jQuery 1.8.3 aborts the remaining callbacks in a ready batch when one throws — one bad handler silently kills unrelated init (carousels, tabs).
 
 ## Notes
 

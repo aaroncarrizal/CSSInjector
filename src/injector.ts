@@ -52,6 +52,17 @@ export async function injectScripts(page: Page, js: string): Promise<void> {
   }, js);
 }
 
+export async function registerOnNewDocument(page: Page, source: string): Promise<string> {
+  const cdp = await page.createCDPSession();
+  const { identifier } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source });
+  return identifier;
+}
+
+export async function removeOnNewDocument(page: Page, identifier: string): Promise<void> {
+  const cdp = await page.createCDPSession();
+  await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+}
+
 export async function stripRemoteStyles(page: Page, patterns: string[]): Promise<void> {
   if (patterns.length === 0) return;
 

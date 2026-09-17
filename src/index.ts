@@ -3,7 +3,7 @@
 import { Command } from "commander";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { launchBrowser, navigateTo, injectCSS, injectScripts, stripRemoteStyles } from "./injector.js";
+import { launchBrowser, navigateTo, injectCSS, injectScripts, stripRemoteStyles, registerOnNewDocument, removeOnNewDocument } from "./injector.js";
 import { readCSSFiles } from "./css-processor.js";
 import { readJSFiles } from "./js-processor.js";
 import { startWatching } from "./watcher.js";
@@ -77,31 +77,39 @@ program
 
     console.log(`[css-injector] CDP available at http://127.0.0.1:9222`);
 
+    const initialCSS = await readCSSFiles(config.dir, config.include, config.exclude);
+    const initialJS = await readJSFiles(config.jsDir ?? "./scripts", config.jsInclude ?? "**/*.js");
+
+    let currentCSS = initialCSS;
+    let currentJS = initialJS;
+
+    // Register JS so it runs on EVERY new document at the very start (before
+    // the page's own scripts). Timing-critical fixes need this: the site's
+    // DOMContentLoaded handlers crash on nameless hero inputs and would have
+    // already run by the time scripts were injected on the 'load' event.
+    let docScriptIdentifier = "";
+    if (initialJS.length > 0) {
+      docScriptIdentifier = await registerOnNewDocument(page, initialJS);
+    }
+
     await navigateTo(page, config.url, { username: config.username ?? "", password: config.password ?? "" });
 
     await stripRemoteStyles(page, config.stripPatterns);
 
-    const initialCSS = await readCSSFiles(config.dir, config.include, config.exclude);
     await injectCSS(page, initialCSS);
     console.log(`[css-injector] Injected ${initialCSS.length} bytes of CSS`);
 
-    const initialJS = await readJSFiles(config.jsDir ?? "./scripts", config.jsInclude ?? "**/*.js");
-    await injectScripts(page, initialJS);
     if (initialJS.length > 0) {
-      console.log(`[css-injector] Injected ${initialJS.length} bytes of JS`);
+      console.log(`[css-injector] Registered ${initialJS.length} bytes of JS for new documents`);
     }
-
-    let currentCSS = initialCSS;
-    let currentJS = initialJS;
 
     page.on("load", async () => {
       try {
         await stripRemoteStyles(page, config.stripPatterns);
         await injectCSS(page, currentCSS);
-        await injectScripts(page, currentJS);
-        console.log(`[css-injector] Re-injected CSS (${currentCSS.length} bytes) + JS (${currentJS.length} bytes) after navigation`);
+        console.log(`[css-injector] Re-injected CSS (${currentCSS.length} bytes) after navigation`);
       } catch (err) {
-        console.error("[css-injector] Error re-injecting CSS/JS:", err);
+        console.error("[css-injector] Error re-injecting CSS:", err);
       }
     });
 
@@ -128,6 +136,13 @@ program
       onChange: async (js) => {
         try {
           currentJS = js;
+          if (docScriptIdentifier) {
+            await removeOnNewDocument(page, docScriptIdentifier);
+            docScriptIdentifier = "";
+          }
+          if (js.length > 0) {
+            docScriptIdentifier = await registerOnNewDocument(page, js);
+          }
           await injectScripts(page, js);
           console.log(`[css-injector] JS updated (${js.length} bytes)`);
         } catch (err) {
