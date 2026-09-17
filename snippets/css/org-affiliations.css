@@ -1,0 +1,55 @@
+/* /snippets/css/org-affiliations */
+/* ==============================================
+   Pattern: Organization affiliations grid
+   ============================================== */
+/* Goal: display the "Organizations we are affiliated
+   with" images in a responsive flex grid — 4 per line
+   on desktop with any leftover items stretched evenly
+   across the final row, 1 column on mobile. */
+
+/* Scope under a page wrapper (e.g. .about-us or the
+   section's parent) if the layout differs per page. */
+
+.org-affiliation__all {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    justify-content: flex-start;
+    align-items: center; /* center vertically within each line */
+}
+
+.org-affiliation-item {
+    flex: 0 0 calc(25% - 18px); /* 4 per line */
+    max-width: calc(25% - 18px);
+    box-sizing: border-box;
+    text-align: center;
+}
+
+/* remaining items (after the first 4) stretch evenly across the full row */
+.org-affiliation-item:nth-child(n+5) {
+    flex: 1 1 0;
+    max-width: none;
+}
+
+.org-affiliation-item_img {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.org-affiliation-item_img img {
+    width: auto;
+    max-width: 100%;
+    height: 120px; /* uniform size */
+    object-fit: contain;
+    display: block;
+}
+
+/* Mobile: 1 column */
+@media (max-width: 768px) {
+    .org-affiliation-item,
+    .org-affiliation-item:nth-child(n+5) {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}
