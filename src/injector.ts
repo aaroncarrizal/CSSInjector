@@ -1,4 +1,4 @@
-import type { Browser, Page } from "puppeteer";
+import type { Browser, Page, CDPSession } from "puppeteer";
 
 export async function launchBrowser(headless: boolean): Promise<Browser> {
   const puppeteer = await import("puppeteer");
@@ -52,15 +52,14 @@ export async function injectScripts(page: Page, js: string): Promise<void> {
   }, js);
 }
 
-export async function registerOnNewDocument(page: Page, source: string): Promise<string> {
-  const cdp = await page.createCDPSession();
-  const { identifier } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source });
+export async function registerOnNewDocument(session: CDPSession, source: string): Promise<string> {
+  await session.send("Page.enable");
+  const { identifier } = await session.send("Page.addScriptToEvaluateOnNewDocument", { source });
   return identifier;
 }
 
-export async function removeOnNewDocument(page: Page, identifier: string): Promise<void> {
-  const cdp = await page.createCDPSession();
-  await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+export async function removeOnNewDocument(session: CDPSession, identifier: string): Promise<void> {
+  await session.send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
 }
 
 export async function stripRemoteStyles(page: Page, patterns: string[]): Promise<void> {

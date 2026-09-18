@@ -1,0 +1,27 @@
+#site-header .typeahead__field {
+    border: 1px solid #dadee1;
+    border-radius: 8px;
+    padding: 1vh 1vw;
+}
+
+#site-header .input.keyword-search {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    outline: none;
+}
+
+#site-header .typeahead__button button {
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+
+#site-header .typeahead__search-icon {
+    padding: 7px 2.25rem;
+}
+@media (max-width: 991px) {
+    #site-header .container .right form[id^='form-keywordSearch-'] {
+        display: none;
+    }
+}

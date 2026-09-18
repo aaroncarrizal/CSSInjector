@@ -11,5 +11,4 @@ const MIN_FACTOR = 0.9;
 const min = +(size * MIN_FACTOR).toFixed(2);
 const vw = +((size / BASE_WIDTH) * 100).toFixed(4);
 
-console.log(`CSS:
-font-size: clamp(${min}px, ${vw}vw, ${size}px);`);
+console.log(`clamp(${min}px, ${vw}vw, ${size}px)`);

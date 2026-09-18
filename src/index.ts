@@ -87,9 +87,10 @@ program
     // the page's own scripts). Timing-critical fixes need this: the site's
     // DOMContentLoaded handlers crash on nameless hero inputs and would have
     // already run by the time scripts were injected on the 'load' event.
+    const scriptSession = await page.createCDPSession();
     let docScriptIdentifier = "";
     if (initialJS.length > 0) {
-      docScriptIdentifier = await registerOnNewDocument(page, initialJS);
+      docScriptIdentifier = await registerOnNewDocument(scriptSession, initialJS);
     }
 
     await navigateTo(page, config.url, { username: config.username ?? "", password: config.password ?? "" });
@@ -137,11 +138,11 @@ program
         try {
           currentJS = js;
           if (docScriptIdentifier) {
-            await removeOnNewDocument(page, docScriptIdentifier);
+            await removeOnNewDocument(scriptSession, docScriptIdentifier);
             docScriptIdentifier = "";
           }
           if (js.length > 0) {
-            docScriptIdentifier = await registerOnNewDocument(page, js);
+            docScriptIdentifier = await registerOnNewDocument(scriptSession, js);
           }
           await injectScripts(page, js);
           console.log(`[css-injector] JS updated (${js.length} bytes)`);

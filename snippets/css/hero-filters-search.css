@@ -1,0 +1,61 @@
+/* Search Form - one line, labels hidden */
+#topSearchForm{
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 10px;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto;
+}
+
+#topSearchForm .form-group.SearchRow{
+    display: flex !important;
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 0;
+    margin: 0 !important;
+}
+
+#topSearchForm .form-group.SearchRow label{
+    display: none !important;
+}
+
+#topSearchForm .form-group.SearchRow select,
+#topSearchForm .SearchStockNumber{
+    width: 100% !important;
+    margin: 0;
+}
+
+#topSearchForm .form-group.SearchRow select,
+#topSearchForm .form-group.SearchRow input
+{
+    border-radius: 8px;
+    background-color: #FBFAF8E5;
+    border: 3px solid white;
+}
+
+#topSearchForm .SearchButton{
+    flex: 0 0 auto;
+    margin: 0;
+    white-space: nowrap;
+    background-color: #FFC50B;
+    border-color: #FFC50B;
+    color: #111827;
+}
+
+#topSearchForm .SearchButton:hover,
+#topSearchForm .SearchButton:focus{
+    background-color: #e0ad00;
+    border-color: #e0ad00;
+    color: #111827;
+}
+
+#topSearchForm .clearBoth{
+    display: none !important;
+}
+
+.h2.heading{
+    display: none !important;
+}

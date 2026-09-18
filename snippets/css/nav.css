@@ -1,0 +1,40 @@
+#main-nav{
+    background-color: #111827;
+}
+
+#main-nav .nav.navbar-nav > li > a{
+    color: white !important;
+    text-transform: uppercase;
+    font-family: 'Roboto';
+    font-weight: 900;
+
+}
+
+#main-nav .nav.navbar-nav > li > a:hover{
+    color: #111827 !important;
+    background-color: white;
+}
+
+#main-nav .nav.navbar-nav li.dropdown .dropdown-menu a{
+    color: #111827;
+}
+
+@media (min-width: 992px){
+    #main-nav .nav.navbar-nav li.dropdown:hover > .dropdown-menu{
+        display: block;
+    }
+}
+
+#main-nav .nav.navbar-nav li b{
+    display: none;
+}
+
+@media (max-width: 991px){
+    #main-nav .nav.navbar-nav li.dropdown .dropdown-menu{
+        background-color: #fff;
+    }
+    #main-nav .navbar-header.btn-group .btn{
+        background-color: #111827;
+        border-color: #111827;
+    }
+}

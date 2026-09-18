@@ -1,0 +1,57 @@
+.home-featured #slideshowWrap .unit .detailsContainer {
+
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    opacity: 1;
+    box-sizing: border-box;
+    padding: 16px;
+    border: 1px solid #e9e9e9;
+    border-radius: 12px;
+    background-color: white;
+}
+.home-featured #slideshowWrap .unit .detailsContainer:hover {
+    background-color: white;
+}
+.home-featured #slideshowWrap .unit .detailsContainer:hover a {
+    color: black;
+}
+
+.home-featured #slideshowWrap .unit-title.hidden-list-mode a {
+    font-family: Inter, var(--body-font-family);
+    font-weight: 700;
+    font-style: normal;
+    font-size: clamp(16.2px, 0.9375vw, 18px);
+    letter-spacing: 0;
+    text-align: center;
+}
+
+.regPrice span{
+    color: #525252;
+}
+
+.regPrice::after{
+    content: 'Call for price';
+    display: block;
+    background-color: #134890;
+    color: white;
+    border-radius: 12px;
+    padding: 10px;
+    text-transform: capitalize;
+}
+
+.home-featured #slideshowWrap .unit .detailsContainer .pricingContainer {
+    height: auto;
+}
+
+/* On iPad Pro 13 / small-desktop widths the section's 50px padding plus the
+   fixed Bootstrap .container width (970/1170) made .container overflow the
+   .home-featured box. The side arrows are positioned -30px off .container,
+   so the right arrow landed outside the section and was cropped by
+   .home-featured { overflow: hidden }. Capping the container to the section's
+   content width keeps both arrows inside. */
+@media (max-width: 1270px) {
+    .home-featured .container {
+        max-width: 100%;
+    }
+}
