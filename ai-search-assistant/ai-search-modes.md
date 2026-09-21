@@ -1,8 +1,9 @@
-# AI Search (Filters / AI modes) — integration guide
+# AI Search Assistant (Filters / AI modes) — integration guide
 
 How the IRV **AI Search** home-hero works, and the CSS/JS needed to drop it
 into a new client. The copy-paste CSS lives in
-[`snippets/css/ai-search-modes.css`](css/ai-search-modes.css).
+[`ai-search-modes.css`](ai-search-modes.css) (it also contains the desktop
+one-line filter-form layout).
 
 ## 1. What it is
 
@@ -18,11 +19,11 @@ wrapper, `.search-toggle-wrapper`:
 Optionally a standalone promo button, `.ai-search-cta-go`, links to the
 `/search-assistant` page.
 
-### Markup (Umbraco macrora)
+### Markup (Umbraco macros)
 
 The wrapper is composed from the site's snippet macros — see
-[`snippets/html/ai-widget.html`](../html/ai-widget.html) and
-[`snippets/html/old_search.html`](../html/old_search.html):
+[`../snippets/html/ai-widget.html`](../snippets/html/ai-widget.html) and
+[`../snippets/html/old_search.html`](../snippets/html/old_search.html):
 
 - **Snippet 527811** — AI search mode tabs (`.ai-search-mode-tabs`)
 - **`RvSearch` macro** — renders the filter form with `SearchId="topSearchForm"`
@@ -56,9 +57,9 @@ the "duplicate `#topSearchForm`" behaviour described below.
 - The active tab is resolved from `sessionStorage`
   (`aiSearchCta.searchMode` + `aiSearchCta.searchModeUserSet`) falling back to
   `window.AISearchConfig.defaultSearchMode` (default `filters`).
-- [`default-filters-tab.js`](../js/default-filters-tab.js) forces **Filters**
-  as the default on every load. See its trade-off note (it clears the
-  persisted choice, so AI does not carry across pages).
+- [`default-filters-tab.js`](../snippets/js/default-filters-tab.js) forces
+  **Filters** as the default on every load. See its trade-off note (it clears
+  the persisted choice, so AI does not carry across pages).
 
 The **header Search button** on mobile
 (`<button data-toggle="collapse" data-target=".top-search">`) is *not* an AI
@@ -82,7 +83,7 @@ Because the macro nests `.search-toggle-wrapper` **inside** the page's existing
    └─ button.SearchButton        ← duplicate "Find My Rv"
 ```
 
-Two bugs follow, both fixed by section 1 of `ai-search-modes.css`:
+Two bugs follow, both fixed by section 2 of `ai-search-modes.css`:
 
 1. **AI never renders.** `html.search-mode-ai #topSearchForm { display:none }`
    hides *both* forms — including the outer shell that contains the AI widget,
@@ -103,7 +104,8 @@ by the header **Search** button. Desired behaviour:
   on desktop (`≥1200px`) and shown on mobile/tablet.
 
 The snippet also wraps the filter rows (`flex-wrap: wrap` + half/third widths)
-so the desktop one-line form does not get crushed into unusable selects.
+so the desktop one-line form (section 1) does not get crushed into unusable
+selects.
 
 ### Assistant CTA placement
 
@@ -122,9 +124,9 @@ One variable drives everything: **`--ai-search-bg-color`**.
 | AI Search submit button | `ai-search-cta.css` → `var(--ai-search-bg-color, var(--primary-bg-color, #333))` |
 | AI input border | same var |
 | Sparkles icon | same var (`color`, SVG uses `fill="currentColor"`) |
-| Mode tabs (text, active underline, badge) | section 3 of the snippet |
-| Filters `Find My Rv` button | section 4 of the snippet (`#topSearchForm .SearchButton`) |
-| Assistant CTA border | section 5 of the snippet (`.ai-search-cta-go`) |
+| Mode tabs (text, active underline, badge) | section 4 of the snippet |
+| Filters `Find My Rv` button | section 5 of the snippet (`#topSearchForm .SearchButton`) |
+| Assistant CTA border | section 6 of the snippet (`.ai-search-cta-go`) |
 
 Set `--ai-search-bg-color` (and a darker `--ai-search-hover-color`) once in
 `:root`. Without it, the AI button/input/sparkles fall back to `#333`.
@@ -135,25 +137,24 @@ Set `--ai-search-bg-color` (and a darker `--ai-search-hover-color`) once in
 |-------|------|-----------|-------------|---------------|
 | `< 768` | hidden | hidden | 2 per row, full-width button | shown |
 | `768 – 1199` | hidden | hidden | 3 per row, full-width button | shown |
-| `≥ 1200` | shown | per mode | one line (`hero-filters-search.css`) | hidden |
+| `≥ 1200` | shown | per mode | one line (section 1) | hidden |
 
 Adjust the `1199/1200` pair to move the mobile/desktop boundary.
 
 ## 7. New-client checklist
 
-1. Copy [`snippets/css/ai-search-modes.css`](css/ai-search-modes.css) into the
-   client `styles/` file and set `--ai-search-bg-color` /
-   `--ai-search-hover-color` to the brand accent.
-2. Copy [`default-filters-tab.js`](../js/default-filters-tab.js) and, if the
-   AI widget leaks a `lots=NNNN` param, [`strip-ai-lot-param.js`](../js/strip-ai-lot-param.js)
-   into `scripts/`.
-3. If the hero uses the one-line search, also copy
-   [`hero-filters-search.css`](hero-filters-search.css) (the snippet's mobile
-   wrap rules counter it).
-4. Keep the `.ai-search-cta-go` markup where the client wants the mobile AI
+1. Copy [`ai-search-modes.css`](ai-search-modes.css) into the client `styles/`
+   file and set `--ai-search-bg-color` / `--ai-search-hover-color` to the brand
+   accent. Drop the sections the client does not use (e.g. section 1 if the
+   hero does not use the one-line form).
+2. Copy [`default-filters-tab.js`](../snippets/js/default-filters-tab.js) and,
+   if the AI widget leaks a `lots=NNNN` param,
+   [`strip-ai-lot-param.js`](../snippets/js/strip-ai-lot-param.js) into
+   `scripts/`.
+3. Keep the `.ai-search-cta-go` markup where the client wants the mobile AI
    entry (nav dropdown and/or `#rv-types`) — the CSS targets the class, not a
    position.
-5. Verify with the CDP client (see below).
+4. Verify with the CDP client (see below).
 
 ## 8. Verification recipes (CDP)
 
@@ -165,8 +166,8 @@ npm run cdp -- eval "(()=>{const q=s=>document.querySelector(s),d=s=>{const e=q(
 npm run cdp -- eval "(()=>{const e=document.querySelector('.ai-search-cta-go'),b=e.getBoundingClientRect(),t=document.elementFromPoint(b.left+b.width/2,b.bottom-4);return {onTop:t.tagName.toLowerCase()+'.'+t.className,inCta:e.contains(t)}})()"
 ```
 
-- Check at `390 / 768 / 1024 / 1199` (tags hidden, filters shown) and
-  `1200 / 1440` (tags shown, CTA hidden).
+- Check at `390 / 768 / 1024 / 1199` (tabs hidden, filters shown) and
+  `1200 / 1440` (tabs shown, CTA hidden).
 - In AI mode both `#topSearchForm`s must be inspected: the outer must stay
   visible, the inner hidden.
 

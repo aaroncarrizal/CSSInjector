@@ -1,15 +1,12 @@
-/* /snippets/css/ai-search-modes */
+/* /ai-search-assistant/ai-search-modes.css */
 
 /* ==========================================================================
-   AI Search (Filters / AI modes) — reusable integration CSS
+   AI Search Assistant (Filters / AI modes) — reusable integration CSS
    --------------------------------------------------------------------------
-   Pairs with:
-     snippets/html/ai-widget.html          .search-toggle-wrapper macro markup
-     snippets/html/old_search.html         top search + RvSearch #topSearchForm
-     snippets/js/default-filters-tab.js    default the tab to "Filters"
-     snippets/js/strip-ai-lot-param.js     strip the stray lots=NNNN param
-     snippets/css/hero-filters-search.css  desktop one-line filter form
-     snippets/ai-search-modes.md           full integration guide
+   This single file supersedes:
+     snippets/css/ai-search-modes.css     (AI widget / mode tabs / CTA)
+     snippets/css/hero-filters-search.css (desktop one-line filter form)
+   The one-line filter-form layout is section 1 below.
 
    The site ships ai-search-cta.css (same-origin /styles/ai-search-cta.css)
    which styles the AI widget using `var(--ai-search-bg-color, var(--primary-
@@ -17,9 +14,8 @@
    falls back to #333. Set `--ai-search-bg-color` once and the AI Search
    submit button, the AI input border and the sparkles icon all follow.
 
-   Copy into a styles/ file and set the accent per client. Everything that
-   references the accent uses the variables below so there is one place to
-   change it.
+   Copy into a client styles/ file and set the accent variables below.
+   Full guide: ai-search-modes.md
    ========================================================================== */
 
 :root {
@@ -28,10 +24,47 @@
 }
 
 /* --------------------------------------------------------------------------
-   1) Duplicate-#topSearchForm nesting fix
+   1) Filter form layout — desktop one line, labels hidden
+   (was snippets/css/hero-filters-search.css)
+   Bundled CSS makes the form and the `.SearchRow`s `display: inline-block`,
+   which wraps the last rows + button to a second line. Force flex + nowrap and
+   let each row share the line. `display` is set by bundled rules, so
+   !important is required.
+   -------------------------------------------------------------------------- */
+#topSearchForm {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 10px;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto;
+}
+#topSearchForm .form-group.SearchRow {
+    display: flex !important;
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 0;
+    margin: 0 !important;
+}
+#topSearchForm .form-group.SearchRow label { display: none !important; }
+#topSearchForm .form-group.SearchRow select,
+#topSearchForm .SearchStockNumber { width: 100% !important; margin: 0; }
+#topSearchForm .form-group.SearchRow select,
+#topSearchForm .form-group.SearchRow input {
+    border-radius: 8px;
+    background-color: #FBFAF8E5;
+    border: 3px solid white;
+}
+#topSearchForm .clearBoth { display: none !important; }
+.h2.heading { display: none !important; }
+
+/* --------------------------------------------------------------------------
+   2) Duplicate-#topSearchForm nesting fix
    The AI-search macro nests .search-toggle-wrapper (tabs + filter form + AI
-   widget) INSIDE the page's existing #topSearchForm, so two elements share
-   the id. Consequences, both fixed here:
+   widget) INSIDE the page's existing #topSearchForm, so two elements share the
+   id. Consequences, both fixed here:
      a. ai-search-cta.css does `html.search-mode-ai #topSearchForm
         { display:none !important }` to hide the filter form, but that also
         hides the OUTER shell which is the AI widget's ancestor -> the AI
@@ -49,7 +82,7 @@ html.search-mode-ai .top-search > #topSearchForm { display: block !important; }
 html.search-mode-ai .search-toggle-wrapper #topSearchForm { display: none !important; }
 
 /* --------------------------------------------------------------------------
-   2) Keep the panel from collapsing to 0 height
+   3) Keep the panel from collapsing to 0 height
    Older themes ship `#top-search-container .top-search { height: 0 }`, which
    lets the next section (e.g. #rv-types) paint over the search panel and cut
    the AI form off. Restore the natural height.
@@ -57,7 +90,7 @@ html.search-mode-ai .search-toggle-wrapper #topSearchForm { display: none !impor
 #top-search-container .top-search { height: auto !important; }
 
 /* --------------------------------------------------------------------------
-   3) Mode tabs — the site authors them white for a dark hero. Recolour for a
+   4) Mode tabs — the site authors them white for a dark hero. Recolour for a
    light hero using the accent.
    -------------------------------------------------------------------------- */
 .ai-search-mode-tabs {
@@ -80,9 +113,12 @@ html.search-mode-ai .search-toggle-wrapper #topSearchForm { display: none !impor
 }
 
 /* --------------------------------------------------------------------------
-   4) Filters submit button (the RvSearch form's .SearchButton)
+   5) Filters submit button (the RvSearch form's .SearchButton)
    -------------------------------------------------------------------------- */
 #topSearchForm .SearchButton {
+    flex: 0 0 auto;
+    margin: 0;
+    white-space: nowrap;
     background-color: var(--ai-search-bg-color);
     border-color: var(--ai-search-bg-color);
     color: #fff;
@@ -95,7 +131,7 @@ html.search-mode-ai .search-toggle-wrapper #topSearchForm { display: none !impor
 }
 
 /* --------------------------------------------------------------------------
-   5) "AI Search Assistant" CTA (links to /search-assistant) — mobile/tablet
+   6) "AI Search Assistant" CTA (links to /search-assistant) — mobile/tablet
    only. z-index lifts it above `#rv-types::before` (absolute, opaque
    background) when it is placed inside the #rv-types section.
    -------------------------------------------------------------------------- */
@@ -109,11 +145,9 @@ html.search-mode-ai .search-toggle-wrapper #topSearchForm { display: none !impor
 }
 
 /* --------------------------------------------------------------------------
-   6) Mobile/tablet: the header Search button (Bootstrap collapse, toggles
+   7) Mobile/tablet: the header Search button (Bootstrap collapse, toggles
    `.top-search`) reveals the FILTERS form only — hide the Filters/AI tabs and
    the AI widget, and wrap the filter rows so they are tappable.
-   (The wrap rules counter the desktop one-line rules in
-   hero-filters-search.css; drop them if that snippet is not used.)
    -------------------------------------------------------------------------- */
 @media (max-width: 1199px) {
     .search-toggle-wrapper .ai-search-mode-tabs,
