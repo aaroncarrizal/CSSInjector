@@ -5,133 +5,121 @@ into a new client. The copy-paste CSS lives in
 [`ai-search-modes.css`](ai-search-modes.css) (it also contains the desktop
 one-line filter-form layout).
 
-## 1. What it is
+> **Read §1 first.** With the canonical markup below the integration is a small,
+> build-agnostic CSS file. Most of the historical pain came from the AI bundle
+> being dropped into a legacy `#topSearchForm` shell and reusing
+> `.home-hero-search` — both are avoided by the markup contract.
 
-The home hero search is a macro that renders three things side by side in one
-wrapper, `.search-toggle-wrapper`:
+## 1. Canonical markup (the contract)
+
+The bundle is `.search-toggle-wrapper` (tabs + filter form + AI widget) placed
+inside a shell. There are **two shells** — one per breakpoint — and exactly
+**one** `#topSearchForm`:
+
+```html
+<!-- Desktop hero shell -->
+<div class="ai-search-shell" id="topSearchFormDesktop">
+  <div class="search-toggle-wrapper">
+
+    <!-- Snippet 527811 — mode tabs -->
+    <div class="ai-search-mode-tabs">
+      <button data-ai-search-mode="filters" class="ai-search-mode-tabs__btn is-active">Filters</button>
+      <button data-ai-search-mode="ai" class="ai-search-mode-tabs__btn">AI Search <span class="ai-search-mode-tabs__badge">New!</span></button>
+    </div>
+
+    <!-- Wrap the RvSearch macro in .ai-search-filters (NOT .home-hero-search) -->
+    <div class="ai-search-filters">
+      <div id="topSearchForm" class="SearchPanel form-inline">…selects… <button class="SearchButton">Search</button></div>
+    </div>
+
+    <!-- Snippet 527812 — AI widget -->
+    <div class="ai-search-cta-widget">…prompt form + suggestions…</div>
+  </div>
+</div>
+
+<!-- Mobile header shell (toggled by the header Search button) -->
+<div id="top-search-container">
+  <div class="collapse top-search">
+    <div id="topSearchFormMobile" class="SearchPanel form-inline">
+      <!-- same .search-toggle-wrapper bundle as above -->
+    </div>
+  </div>
+</div>
+```
+
+The reference markup is in [`html/ai-widget.html`](html/ai-widget.html); the
+standalone Assistant button is in
+[`html/mobile-ai-button.html`](html/mobile-ai-button.html).
+
+### Rules
+
+| # | Rule | Why |
+|---|------|-----|
+| 1 | The **shell** must never use `id="topSearchForm"` (use `ai-search-shell` / `#topSearchFormDesktop` / `#topSearchFormMobile`). | `ai-search-cta.css` hides `#topSearchForm` in AI mode; if the shell shares that id it hides the AI widget's own ancestor and AI mode renders empty. |
+| 2 | The filter container is **`.ai-search-filters`**, never `.home-hero-search`. | Themes style/hide `.home-hero-search` for the hero (e.g. `display:none`), which hid the whole filter form. |
+| 3 | Only the form's `.SearchButton` exists — the shell has none. | A stray button renders as a second/duplicate search button. |
+| 4 | Keep the mobile shell in `.collapse.top-search` with a unique id (`#topSearchFormMobile`). | The header Search button toggles `.collapse.top-search`; this is the mobile "nav filters" hook. |
+| 5 | `.ai-search-cta-go` is a normal sibling (nav dropdown / page), not inside a full-bleed section pseudo. | `#rv-types::before` etc. paint over static content; the CSS lifts it, but don't nest it if avoidable. |
+
+## 2. What it is
 
 | Part | Element | What it does |
 |------|---------|--------------|
-| Mode tabs | `.ai-search-mode-tabs` | "Filters" / "AI Search `New!`" buttons (`data-ai-search-mode="filters"|"ai"`) |
-| Filter form | `.home-hero-search > #topSearchForm` | The classic Year / Type / Features / Length / Stock selects + `Find My Rv` |
-| AI widget | `.ai-search-cta-widget` | Free-text "Describe your ideal RV …" form + suggestion chips |
+| Mode tabs | `.ai-search-mode-tabs` | "Filters" / "AI Search `New!`" (`data-ai-search-mode="filters"|"ai"`) |
+| Filter form | `.ai-search-filters > #topSearchForm` | Year / Type / Features / Length / Stock selects + `Find My Rv` |
+| AI widget | `.ai-search-cta-widget` | Free-text "Describe your ideal RV …" + suggestion chips |
+| Assistant CTA | `.ai-search-cta-go` | Links to `/search-assistant` (mobile/tablet AI entry) |
 
-Optionally a standalone promo button, `.ai-search-cta-go`, links to the
-`/search-assistant` page.
+## 3. How mode switching works
 
-### Markup (Umbraco macros)
-
-The wrapper is composed from the site's snippet macros — see
-[`html/ai-widget.html`](html/ai-widget.html) and
-[`../html/old_search.html`](../html/old_search.html):
-
-- **Snippet 527811** — AI search mode tabs (`.ai-search-mode-tabs`)
-- **`RvSearch` macro** — renders the filter form with `SearchId="topSearchForm"`
-- **Snippet 527812** — AI CTA widget (`.ai-search-cta-widget`)
-
-There is usually already a bare `#topSearchForm` shell on the page (the old
-search placeholder). The macro renders **inside** it, which is the source of
-the "duplicate `#topSearchForm`" behaviour described below.
-
-### Assistant CTA markup (`/search-assistant`)
-
-```html
-<a class="ai-search-cta-go" href="/search-assistant">
-  <span class="ai-search-cta-go-label">
-    <svg viewBox="0 0 100 100" class="sparkles">…</svg>
-    AI Search Assistant
-    <span class="ai-search-cta-go-badge">New!</span>
-  </span>
-</a>
-```
-
-Markup lives in [`html/mobile-ai-button.html`](html/mobile-ai-button.html).
-
-## 2. How mode switching works
-
-- The site's `ai-search-cta.js` toggles classes on **`<html>`**:
-  `search-mode-ai` **or** `search-mode-filters`.
+- The site's `ai-search-cta.js` toggles classes on **`<html>`**: `search-mode-ai`
+  **or** `search-mode-filters`.
 - `ai-search-cta.css` then does (roughly):
-  - `html:not(.search-mode-ai) .ai-search-cta-widget { display:none }`
-    → the AI widget only shows in AI mode.
-  - `html.search-mode-ai #topSearchForm { display:none }`
-    → the filter form only shows in Filters mode.
-- The active tab is resolved from `sessionStorage`
+  - `html:not(.search-mode-ai) .ai-search-cta-widget { display:none }` → AI widget only in AI mode.
+  - `html.search-mode-ai #topSearchForm { display:none }` → filter form only in Filters mode.
+- The active tab comes from `sessionStorage`
   (`aiSearchCta.searchMode` + `aiSearchCta.searchModeUserSet`) falling back to
   `window.AISearchConfig.defaultSearchMode` (default `filters`).
-- [`default-filters-tab.js`](../snippets/js/default-filters-tab.js) forces
-  **Filters** as the default on every load. See its trade-off note (it clears
-  the persisted choice, so AI does not carry across pages).
+- [`../js/default-filters-tab.js`](../js/default-filters-tab.js) forces
+  **Filters** as the default each load (see its trade-off note).
 
-The **header Search button** on mobile
+The **header Search button**
 (`<button data-toggle="collapse" data-target=".top-search">`) is *not* an AI
-tab — it is a plain Bootstrap collapse that only shows/hides the `.top-search`
-panel. It does **not** change the filters/AI mode; it reveals whatever mode is
-active. (Verified: `<html>` class and active tab are unchanged by clicking it.)
-
-## 3. The duplicate-`#topSearchForm` gotcha
-
-Because the macro nests `.search-toggle-wrapper` **inside** the page's existing
-`#topSearchForm`, there are two elements with that id:
-
-```
-.top-search
-└─ #topSearchForm                ← outer shell (the old placeholder)
-   ├─ .search-toggle-wrapper
-   │  ├─ .ai-search-mode-tabs    ← tabs
-   │  ├─ .home-hero-search
-   │  │  └─ #topSearchForm       ← inner form, the real filter selects
-   │  └─ .ai-search-cta-widget   ← AI widget
-   └─ button.SearchButton        ← duplicate "Find My Rv"
-```
-
-Two bugs follow, both fixed by section 2 of `ai-search-modes.css`:
-
-1. **AI never renders.** `html.search-mode-ai #topSearchForm { display:none }`
-   hides *both* forms — including the outer shell that contains the AI widget,
-   so switching to AI shows an empty panel. Fix: keep the outer shell visible
-   and hide only the inner form.
-2. **Squeezed layout.** If the outer shell is `display:flex`, the wrapper and
-   the duplicate `.SearchButton` sit on one row. Fix: make the outer shell
-   stack and hide its duplicate button.
+tab — it is a plain Bootstrap collapse that only shows/hides the mobile
+`.top-search` panel. It does **not** change filters/AI mode; it reveals the
+currently-active mode.
 
 ## 4. Mobile behaviour (header Search → filters)
 
-On phones/tablets the `.top-search` panel is collapsed by default and opened
-by the header **Search** button. Desired behaviour:
+On phones/tablets:
 
-- Panel opens showing the **filter form** only.
-- The mode tabs and AI widget are hidden (`≤1199px` in the snippet).
-- The **AI Search Assistant CTA** is the mobile AI entry point — it is hidden
-  on desktop (`≥1200px`) and shown on mobile/tablet.
+- The header **Search** button opens `.collapse.top-search` (the mobile shell).
+- The panel shows the **filter form only** — the tabs and AI widget are hidden
+  (`≤1199px` in the CSS).
+- The **Assistant CTA** is the mobile AI entry: shown on mobile/tablet, hidden
+  on desktop (`≥1200px`).
+- Filter rows wrap (2 per row on phones, 3 on tablets) so the desktop one-line
+  form isn't crushed.
 
-The snippet also wraps the filter rows (`flex-wrap: wrap` + half/third widths)
-so the desktop one-line form (section 1) does not get crushed into unusable
-selects.
-
-### Assistant CTA placement
-
-- Placed inside the nav "Search RVs" dropdown and/or inside `#rv-types` on the
-  homepage.
-- `#rv-types::before` is `position:absolute; top:83px` with an opaque
-  background and paints over static children — the snippet gives the CTA
-  `position: relative; z-index: 2` so it is not cut off.
+If the tabs sit on a light mobile panel, uncomment §5 of
+`ai-search-modes.css` to recolour them with the accent.
 
 ## 5. Button / accent colouring
 
-One variable drives everything: **`--ai-search-bg-color`**.
+One variable: **`--ai-search-bg-color`**.
 
 | Target | Source |
 |--------|--------|
 | AI Search submit button | `ai-search-cta.css` → `var(--ai-search-bg-color, var(--primary-bg-color, #333))` |
 | AI input border | same var |
-| Sparkles icon | same var (`color`, SVG uses `fill="currentColor"`) |
-| Mode tabs (text, active underline, badge) | section 4 of the snippet |
-| Filters `Find My Rv` button | section 5 of the snippet (`#topSearchForm .SearchButton`) |
-| Assistant CTA border | section 6 of the snippet (`.ai-search-cta-go`) |
+| Sparkles icon | same var (`color`; SVG uses `fill="currentColor"`) |
+| Filters `Find My Rv` button | §3 of the CSS (`#topSearchForm .SearchButton`) |
+| Mode tabs (light-panel option) | §5 of the CSS |
+| Assistant CTA border | §6 of the CSS (`.ai-search-cta-go`) |
 
-Set `--ai-search-bg-color` (and a darker `--ai-search-hover-color`) once in
-`:root`. Without it, the AI button/input/sparkles fall back to `#333`.
+Set `--ai-search-bg-color` / `--ai-search-hover-color` once. If the AI
+button/input/sparkles stay `#333`, the variable never took (the theme also
+defines `--primary-bg-color`, which is the next fallback).
 
 ## 6. Breakpoints used
 
@@ -139,54 +127,57 @@ Set `--ai-search-bg-color` (and a darker `--ai-search-hover-color`) once in
 |-------|------|-----------|-------------|---------------|
 | `< 768` | hidden | hidden | 2 per row, full-width button | shown |
 | `768 – 1199` | hidden | hidden | 3 per row, full-width button | shown |
-| `≥ 1200` | shown | per mode | one line (section 1) | hidden |
+| `≥ 1200` | shown | per mode | one line | hidden |
 
 Adjust the `1199/1200` pair to move the mobile/desktop boundary.
 
 ## 7. New-client checklist
 
-1. Copy [`ai-search-modes.css`](ai-search-modes.css) into the client `styles/`
-   file and set `--ai-search-bg-color` / `--ai-search-hover-color` to the brand
-   accent. Drop the sections the client does not use (e.g. section 1 if the
-   hero does not use the one-line form).
-2. Copy [`default-filters-tab.js`](../js/default-filters-tab.js) and,
-   if the AI widget leaks a `lots=NNNN` param,
-   [`strip-ai-lot-param.js`](../js/strip-ai-lot-param.js) into
-   `scripts/`.
-3. Keep the `.ai-search-cta-go` markup where the client wants the mobile AI
-   entry (nav dropdown and/or `#rv-types`) — the CSS targets the class, not a
-   position.
-4. Verify with the CDP client (see below).
+1. Make sure the CMS markup matches **§1** (single `#topSearchForm`, shells
+   `ai-search-shell` / `#topSearchFormMobile`, container `.ai-search-filters`,
+   no duplicate `.SearchButton`).
+2. Copy [`ai-search-modes.css`](ai-search-modes.css) into the client `styles/`
+   file; set `--ai-search-bg-color` / `--ai-search-hover-color`. Drop the
+   sections the client doesn't use.
+3. Copy [`default-filters-tab.js`](../js/default-filters-tab.js) and, if the AI
+   widget leaks a `lots=NNNN`, [`strip-ai-lot-param.js`](../js/strip-ai-lot-param.js)
+   into `scripts/`.
+4. Place the `.ai-search-cta-go` markup ([`html/mobile-ai-button.html`](html/mobile-ai-button.html))
+   where the client wants the mobile AI entry (nav dropdown and/or a hero CTA).
+5. Verify with the CDP client (see below).
 
 ## 8. Verification recipes (CDP)
 
 ```bash
 # mode + display of each part
-npm run cdp -- eval "(()=>{const q=s=>document.querySelector(s),d=s=>{const e=q(s);return e?getComputedStyle(e).display:'MISSING'};return {mode:document.documentElement.className.split(' ').find(c=>c.startsWith('search-mode')),wrapper:d('.search-toggle-wrapper'),tabs:d('.ai-search-mode-tabs'),ai:d('.ai-search-cta-widget'),cta:d('.ai-search-cta-go'),panel:getComputedStyle(q('.top-search')).height}})()"
+npm run cdp -- eval "(()=>{const q=s=>document.querySelector(s),d=s=>{const e=q(s);return e?getComputedStyle(e).display:'MISSING'};return {mode:document.documentElement.className.split(' ').find(c=>c.startsWith('search-mode')),shell:d('.ai-search-shell'),tabs:d('.ai-search-mode-tabs'),filters:d('.ai-search-filters #topSearchForm'),ai:d('.ai-search-cta-widget'),cta:d('.ai-search-cta-go')}})()"
 
-# who is actually on top of the CTA (catches #rv-types::before clipping)
+# in AI mode both must hold: the shell stays visible, the filter form is hidden
+npm run cdp -- eval "(()=>({shell:getComputedStyle(document.querySelector('.ai-search-shell')).display,form:getComputedStyle(document.querySelector('.search-toggle-wrapper #topSearchForm')).display}))()"
+
+# who is on top of the CTA (catches full-bleed pseudo clipping)
 npm run cdp -- eval "(()=>{const e=document.querySelector('.ai-search-cta-go'),b=e.getBoundingClientRect(),t=document.elementFromPoint(b.left+b.width/2,b.bottom-4);return {onTop:t.tagName.toLowerCase()+'.'+t.className,inCta:e.contains(t)}})()"
 ```
 
-- Check at `390 / 768 / 1024 / 1199` (tabs hidden, filters shown) and
-  `1200 / 1440` (tabs shown, CTA hidden).
-- In AI mode both `#topSearchForm`s must be inspected: the outer must stay
-  visible, the inner hidden.
+- Check `390 / 768 / 1024 / 1199` (tabs hidden, filters shown) and `1200 / 1440`
+  (tabs shown, CTA hidden).
 
-## 9. Gotchas
+## 9. Gotchas / legacy notes
 
-- **Two `#topSearchForm` elements share an id.** `#topSearchForm` selectors hit
-  both. Use `.top-search > #topSearchForm` (outer) vs
-  `.search-toggle-wrapper #topSearchForm` (inner) to disambiguate.
-- **`!important` is required** — `ai-search-cta.css` and the bundled theme both
-  set `display` with `!important`.
-- The mode is stored in `sessionStorage`, so a stale `ai` pick can re-apply;
-  `default-filters-tab.js` clears it on load.
-- The AI submit/input/sparkles fall back to `#333` when
-  `--ai-search-bg-color` is undefined — that is the tell-tale if the accent
-  "didn't take".
-- `#rv-types::before` (and similar full-bleed section pseudo-elements) paint
-  over static content; give anything placed inside them
-  `position: relative; z-index: ≥1`.
-- `color-mix()` is used in the snippet for translucent accent tints; if a
-  target Chrome is older, replace those with explicit `rgba()` values.
+- **Legacy shells reused `#topSearchForm`.** If a build still nests the bundle
+  in a `#topSearchForm` shell (two elements with that id), AI mode will hide the
+  AI widget's ancestor. Temporary fix: keep the shell visible with
+  `html.search-mode-ai #topSearchForm:has(> .search-toggle-wrapper) { display:block !important }`.
+  Better: fix the markup to §1.
+- **Legacy filter containers used `.home-hero-search`.** Themes that do
+  `.home-hero-search { display:none }` hid the filter form. Temporary fix:
+  `.search-toggle-wrapper .home-hero-search { display:block !important }`.
+  Better: rename to `.ai-search-filters`.
+- **`!important` is required** — `ai-search-cta.css` and bundled themes set
+  `display` with `!important`.
+- The mode is stored in `sessionStorage`; a stale `ai` pick can re-apply —
+  `default-filters-tab.js` clears it.
+- Full-bleed section pseudo-elements (`#rv-types::before`) paint over static
+  content; give anything inside them `position: relative; z-index: ≥1`.
+- `color-mix()` is used for translucent accent tints; replace with `rgba()` on
+  older Chrome.
