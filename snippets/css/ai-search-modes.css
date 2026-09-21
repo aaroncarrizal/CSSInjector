@@ -1,0 +1,129 @@
+/* /snippets/css/ai-search-modes */
+
+/* ==========================================================================
+   AI Search (Filters / AI modes) — reusable integration CSS
+   --------------------------------------------------------------------------
+   Pairs with:
+     snippets/html/ai-widget.html          .search-toggle-wrapper macro markup
+     snippets/html/old_search.html         top search + RvSearch #topSearchForm
+     snippets/js/default-filters-tab.js    default the tab to "Filters"
+     snippets/js/strip-ai-lot-param.js     strip the stray lots=NNNN param
+     snippets/css/hero-filters-search.css  desktop one-line filter form
+     snippets/ai-search-modes.md           full integration guide
+
+   The site ships ai-search-cta.css (same-origin /styles/ai-search-cta.css)
+   which styles the AI widget using `var(--ai-search-bg-color, var(--primary-
+   bg-color, #333))`. Those variables are usually undefined, so everything
+   falls back to #333. Set `--ai-search-bg-color` once and the AI Search
+   submit button, the AI input border and the sparkles icon all follow.
+
+   Copy into a styles/ file and set the accent per client. Everything that
+   references the accent uses the variables below so there is one place to
+   change it.
+   ========================================================================== */
+
+:root {
+    --ai-search-bg-color: #0e4c27;    /* <-- per-client brand accent */
+    --ai-search-hover-color: #0a3a1e; /* <-- darker shade for hover states */
+}
+
+/* --------------------------------------------------------------------------
+   1) Duplicate-#topSearchForm nesting fix
+   The AI-search macro nests .search-toggle-wrapper (tabs + filter form + AI
+   widget) INSIDE the page's existing #topSearchForm, so two elements share
+   the id. Consequences, both fixed here:
+     a. ai-search-cta.css does `html.search-mode-ai #topSearchForm
+        { display:none !important }` to hide the filter form, but that also
+        hides the OUTER shell which is the AI widget's ancestor -> the AI
+        widget can never render in AI mode. Keep the outer shell visible and
+        hide only the inner filter form.
+     b. The outer shell is often `display:flex`, so .search-toggle-wrapper and
+        a duplicate `.SearchButton` are laid out side-by-side, squeezing the
+        wrapper. Make the outer shell stack and drop the duplicate button.
+   -------------------------------------------------------------------------- */
+.top-search > #topSearchForm { display: block !important; }
+.top-search > #topSearchForm > .SearchButton { display: none !important; }
+
+html.search-mode-ai #top-search-container .top-search { display: block !important; }
+html.search-mode-ai .top-search > #topSearchForm { display: block !important; }
+html.search-mode-ai .search-toggle-wrapper #topSearchForm { display: none !important; }
+
+/* --------------------------------------------------------------------------
+   2) Keep the panel from collapsing to 0 height
+   Older themes ship `#top-search-container .top-search { height: 0 }`, which
+   lets the next section (e.g. #rv-types) paint over the search panel and cut
+   the AI form off. Restore the natural height.
+   -------------------------------------------------------------------------- */
+#top-search-container .top-search { height: auto !important; }
+
+/* --------------------------------------------------------------------------
+   3) Mode tabs — the site authors them white for a dark hero. Recolour for a
+   light hero using the accent.
+   -------------------------------------------------------------------------- */
+.ai-search-mode-tabs {
+    border-bottom-color: color-mix(in srgb, var(--ai-search-bg-color) 25%, transparent) !important;
+}
+.ai-search-mode-tabs__btn {
+    color: color-mix(in srgb, var(--ai-search-bg-color) 75%, transparent) !important;
+}
+.ai-search-mode-tabs__btn:hover,
+.ai-search-mode-tabs__btn:focus {
+    color: var(--ai-search-bg-color) !important;
+}
+.ai-search-mode-tabs__btn.is-active {
+    color: var(--ai-search-bg-color) !important;
+    border-bottom-color: var(--ai-search-bg-color) !important;
+}
+.ai-search-mode-tabs .ai-search-mode-tabs__badge {
+    background: color-mix(in srgb, var(--ai-search-bg-color) 12%, transparent) !important;
+    color: var(--ai-search-bg-color) !important;
+}
+
+/* --------------------------------------------------------------------------
+   4) Filters submit button (the RvSearch form's .SearchButton)
+   -------------------------------------------------------------------------- */
+#topSearchForm .SearchButton {
+    background-color: var(--ai-search-bg-color);
+    border-color: var(--ai-search-bg-color);
+    color: #fff;
+}
+#topSearchForm .SearchButton:hover,
+#topSearchForm .SearchButton:focus {
+    background-color: var(--ai-search-hover-color);
+    border-color: var(--ai-search-hover-color);
+    color: #fff;
+}
+
+/* --------------------------------------------------------------------------
+   5) "AI Search Assistant" CTA (links to /search-assistant) — mobile/tablet
+   only. z-index lifts it above `#rv-types::before` (absolute, opaque
+   background) when it is placed inside the #rv-types section.
+   -------------------------------------------------------------------------- */
+.ai-search-cta-go {
+    position: relative;
+    z-index: 2;
+    border: 2px solid var(--ai-search-bg-color);
+}
+@media (min-width: 1200px) {
+    .ai-search-cta-go { display: none !important; }
+}
+
+/* --------------------------------------------------------------------------
+   6) Mobile/tablet: the header Search button (Bootstrap collapse, toggles
+   `.top-search`) reveals the FILTERS form only — hide the Filters/AI tabs and
+   the AI widget, and wrap the filter rows so they are tappable.
+   (The wrap rules counter the desktop one-line rules in
+   hero-filters-search.css; drop them if that snippet is not used.)
+   -------------------------------------------------------------------------- */
+@media (max-width: 1199px) {
+    .search-toggle-wrapper .ai-search-mode-tabs,
+    .search-toggle-wrapper .ai-search-cta-widget { display: none !important; }
+
+    #topSearchForm { flex-wrap: wrap !important; }
+    #topSearchForm .form-group.SearchRow { flex: 1 1 calc(33.333% - 8px) !important; }
+    #topSearchForm .SearchButton { flex: 1 1 100% !important; width: 100% !important; }
+}
+
+@media (max-width: 767px) {
+    #topSearchForm .form-group.SearchRow { flex: 1 1 calc(50% - 6px) !important; }
+}
