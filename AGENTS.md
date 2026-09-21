@@ -154,7 +154,7 @@ When the user provides a numbered list of CSS fixes/features to apply to the tar
 
 ## Reusable CSS Snippets
 
-Reusable, proven CSS patterns live in `snippets/css/` (NOT `styles/`). Copy the relevant pattern into a `styles/` file when a fix requires it, keeping the scoping selector (e.g. `.homepage`) intact. The self-contained **AI Search Assistant** bundle lives in its own folder, `ai-search-assistant/`.
+Reusable, proven CSS patterns live in `snippets/css/` (NOT `styles/`). Copy the relevant pattern into a `styles/` file when a fix requires it, keeping the scoping selector (e.g. `.homepage`) intact. The self-contained **AI Search Assistant** bundle lives in its own folder, `snippets/ai-search-assistant/`.
 
 | File | Pattern |
 |------|---------|
@@ -163,19 +163,19 @@ Reusable, proven CSS patterns live in `snippets/css/` (NOT `styles/`). Copy the 
 | `flush-next-section.css` | Next section renders flush under the hero: `margin-top: calc(50vh - var(--nav-height))` (60vh on short viewports) |
 | `dropdown-single-tap.css` | Makes Bootstrap navbar sub-dropdowns expand on a single tap below 768px: sticky-touch `:hover` shows the menu (works around the site's jQuery `hover` handler fighting Bootstrap's click toggle, which caused double-tap) |
 
-AI Search Assistant (its own folder, `ai-search-assistant/`):
+AI Search Assistant (its own folder, `snippets/ai-search-assistant/`):
 
 | File | Pattern |
 |------|---------|
-| `ai-search-modes.css` | Self-contained bundle: one-line filter form, duplicate-`#topSearchForm` nesting fix, mode-tab recolour, AI submit/input/sparkles via `--ai-search-bg-color`, mobile-only Assistant CTA, and the mobile header-Search → filters-only behaviour. Full guide: `ai-search-assistant/ai-search-modes.md` |
+| `ai-search-modes.css` | Self-contained bundle: one-line filter form, duplicate-`#topSearchForm` nesting fix, mode-tab recolour, AI submit/input/sparkles via `--ai-search-bg-color`, mobile-only Assistant CTA, and the mobile header-Search → filters-only behaviour. Full guide: `snippets/ai-search-assistant/ai-search-modes.md` |
 
 Key gotchas captured in these snippets:
 - The site's bundled CSS may ship `top: 7vh !important` on the hero at 992–1200px — override with `!important`.
 - `--header-height` (site-defined) vs `--nav-height` (ours, 62px/66px) are different values; the flush margin formula subtracts `--nav-height`, never `--header-height`.
 - Short-viewport (`max-height: 800px`) overrides must be placed after the base rules so the cascade wins.
-- Search-form rows: bundled CSS makes the form `display: inline-block` at desktop and the `SearchRow`s `display: inline-block`, which lets the last rows + button wrap to a second line. Force `display: flex !important` on the form with `flex-wrap: nowrap` and make each row `flex: 1 1 0 !important` so they share the line. The `display` values on the form/rows are overridden by bundled rules, so `!important` is required. (Now section 1 of `ai-search-assistant/ai-search-modes.css`.)
+- Search-form rows: bundled CSS makes the form `display: inline-block` at desktop and the `SearchRow`s `display: inline-block`, which lets the last rows + button wrap to a second line. Force `display: flex !important` on the form with `flex-wrap: nowrap` and make each row `flex: 1 1 0 !important` so they share the line. The `display` values on the form/rows are overridden by bundled rules, so `!important` is required. (Now section 1 of `snippets/ai-search-assistant/ai-search-modes.css`.)
 - Dropdown double-tap on mobile: a bundled inline jQuery `hover` handler on `li.dropdown` adds `.open` on tap (via `mouseenter`) and Bootstrap's click toggle then removes it — one tap nets out closed. Fix via sticky touch `:hover` display (see `dropdown-single-tap.css`); never re-add `.open` styling to mobile, and force `position: static` below 768px so the menu stays in-flow.
-- AI search hero: the macro nests `.search-toggle-wrapper` INSIDE the page's existing `#topSearchForm`, so **two elements share that id**. `html.search-mode-ai #topSearchForm { display:none }` (from `ai-search-cta.css`) then hides the AI widget's own ancestor, so AI mode rendered an empty panel; and a flex outer shell squeezed the wrapper next to a duplicate `.SearchButton`. Disambiguate with `.top-search > #topSearchForm` (outer) vs `.search-toggle-wrapper #topSearchForm` (inner). See `ai-search-assistant/ai-search-modes.css` / `ai-search-assistant/ai-search-modes.md`.
+- AI search hero: the macro nests `.search-toggle-wrapper` INSIDE the page's existing `#topSearchForm`, so **two elements share that id**. `html.search-mode-ai #topSearchForm { display:none }` (from `ai-search-cta.css`) then hides the AI widget's own ancestor, so AI mode rendered an empty panel; and a flex outer shell squeezed the wrapper next to a duplicate `.SearchButton`. Disambiguate with `.top-search > #topSearchForm` (outer) vs `.search-toggle-wrapper #topSearchForm` (inner). See `snippets/ai-search-assistant/ai-search-modes.css` / `snippets/ai-search-assistant/ai-search-modes.md`.
 - AI search accents: the AI submit button, AI input border and sparkles icon all read `var(--ai-search-bg-color, var(--primary-bg-color, #333))` from `ai-search-cta.css`; on most builds those variables are undefined so they fall back to `#333`. Set `--ai-search-bg-color` once to brand them.
 - The header Search button (`data-toggle="collapse" data-target=".top-search"`) only toggles panel visibility — it is **not** an AI-mode tab and does not switch filters/AI.
 - Debugging responsively: the CDP client connects to `pages[0]`; if a DevTools tab is open it's the first page, so the debugger targets DevTools instead of the site. When testing responsive layouts, verify at a real desktop width (e.g. CDP `Emulation.setDeviceMetricsOverride`), not the DevTools-docked viewport.

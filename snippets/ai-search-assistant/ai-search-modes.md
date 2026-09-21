@@ -22,8 +22,8 @@ Optionally a standalone promo button, `.ai-search-cta-go`, links to the
 ### Markup (Umbraco macros)
 
 The wrapper is composed from the site's snippet macros — see
-[`../snippets/html/ai-widget.html`](../snippets/html/ai-widget.html) and
-[`../snippets/html/old_search.html`](../snippets/html/old_search.html):
+[`html/ai-widget.html`](html/ai-widget.html) and
+[`../html/old_search.html`](../html/old_search.html):
 
 - **Snippet 527811** — AI search mode tabs (`.ai-search-mode-tabs`)
 - **`RvSearch` macro** — renders the filter form with `SearchId="topSearchForm"`
@@ -44,6 +44,8 @@ the "duplicate `#topSearchForm`" behaviour described below.
   </span>
 </a>
 ```
+
+Markup lives in [`html/mobile-ai-button.html`](html/mobile-ai-button.html).
 
 ## 2. How mode switching works
 
@@ -147,9 +149,9 @@ Adjust the `1199/1200` pair to move the mobile/desktop boundary.
    file and set `--ai-search-bg-color` / `--ai-search-hover-color` to the brand
    accent. Drop the sections the client does not use (e.g. section 1 if the
    hero does not use the one-line form).
-2. Copy [`default-filters-tab.js`](../snippets/js/default-filters-tab.js) and,
+2. Copy [`default-filters-tab.js`](../js/default-filters-tab.js) and,
    if the AI widget leaks a `lots=NNNN` param,
-   [`strip-ai-lot-param.js`](../snippets/js/strip-ai-lot-param.js) into
+   [`strip-ai-lot-param.js`](../js/strip-ai-lot-param.js) into
    `scripts/`.
 3. Keep the `.ai-search-cta-go` markup where the client wants the mobile AI
    entry (nav dropdown and/or `#rv-types`) — the CSS targets the class, not a
