@@ -13,6 +13,7 @@ CSS Injector is a CLI tool that uses Puppeteer to open a target URL in Chrome, i
 | `npm run dev` | Run the injector (opens Chrome, navigates to URL, injects CSS, watches for changes) |
 | `npm run cdp -- <command>` | Run CDP client commands against the running browser |
 | `npm run bp -- <size>` | Resize the page viewport to a Bootstrap breakpoint (see `breakpoint.ts`) |
+| `npm run dbg -- <command>` | Style-debugging toolkit (find/box/outline/check/preview/crop) |
 | `npm run build` | Build with Vite |
 | `npm run typecheck` | TypeScript type checking |
 | `npm start` | Run the built version |
@@ -29,6 +30,7 @@ src/
 ├── cdp-connection.ts # Shared CDP helpers: loads .cssinjector.json, puppeteer.connect() (with the devtools-skipping targetFilter), and getPage() which picks the site page by configured url host.
 ├── cdp-client.ts     # Standalone script that connects to running Chrome via CDP (http://127.0.0.1:9222). Supports screenshot, styles, html, select, highlight, eval, list commands.
 ├── breakpoint.ts     # Standalone script that resizes the page viewport to a Bootstrap 5 breakpoint (`npm run bp -- md`) or arbitrary size (`npm run bp -- resize 500 800`).
+├── debug.ts          # Standalone style-debugging toolkit (`npm run dbg`): find/box/outline/check/preview/set/crop.
 ├── target-filter.ts  # `skipDevtoolsTargets` — passed to puppeteer.launch()/connect() so Puppeteer never attaches to the devtools:// frontend or chrome:// browser_ui targets.
 └── types.ts          # Config interface and defaults.
 ```
@@ -80,6 +82,29 @@ The CDP client connects to `http://127.0.0.1:9222` and provides these commands:
 | `eval <expression>` | Evaluates JS in page context, returns JSON result |
 | `list` | JSON with total element count and tag frequency map |
 | `togglestyles <pattern>` | Toggle remote stylesheets by href pattern (strips/restores `<link>` elements) |
+
+## Style Debugging Toolkit (`npm run dbg`)
+
+Use this instead of writing ad-hoc CDP probes. It connects to the running Chrome and reads/overrides styles on the live page without editing files.
+
+| Command | Output |
+|---------|--------|
+| `find <text> [limit]` | Deepest elements containing the text, each with a suggested selector + box + text preview |
+| `box <selector>` | Box model, layout (display/flex/max-width/text-align) and the 6-level ancestor chain |
+| `outline [selector\|reset]` | Red outline overlay on matches (or every element) + screenshot to `./debug/` |
+| `check <selector> [widths...]` | Per-width (default all Bootstrap breakpoints) display/visibility/opacity/box + visible/inViewport; restores the viewport |
+| `preview <css\|@file>` / `preview reset` | Apply/replace/clear a persistent `<style id="debug-preview">` on the page |
+| `set <selector> <prop> <value>` | Append one declaration to the preview stylesheet |
+| `crop <selector> [path]` | Screenshot just one element to `./debug/` |
+
+Recipes for common requests:
+
+- **"Make the image bigger / center this section"** (e.g. homepage reviews): `find "Reviews"` → pick the selector → `box "<selector>"` to see the wrapping container's `max-width`/`flex` → `preview "<selector> img{width:320px} <container>{justify-content:center}"` → `crop "<section>"` to compare. Iterate with `preview`/`set`; only write to `styles/` once it looks right.
+- **"On view 1032x1376 the header nav isn't visible"**: `check "header nav" 1032 1376` (add any width) to see `display`/`visibility`/`inViewport` at that size, then `preview` a fix and re-run `check`.
+- **"Add styles for the AI widget (mobile + desktop)"**: `find "..."` / `outline` to map the widget, `check` across breakpoints for the mobile/desktop split, `preview` the candidate CSS, then move it into `styles/` (or `snippets/ai-search-assistant/`).
+- A screenshot URL in a request (prnt.sc) is only a visual hint — always resolve the real element with `find`/`box` before styling.
+
+Gotcha — `page.evaluate()` + tsx: do not declare named functions inside the evaluate callback (e.g. `const helper = () => {}`). tsx/esbuild's `keepNames` rewrites them with a `__name()` helper that doesn't exist in the page, throwing `ReferenceError: __name is not defined`. Inline the logic or use anonymous callbacks.
 
 ## Key Dependencies
 
