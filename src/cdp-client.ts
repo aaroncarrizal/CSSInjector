@@ -13,17 +13,26 @@ async function ensureDir(filePath: string) {
   await mkdir(dirname(filePath), { recursive: true });
 }
 
-async function loadAuth(): Promise<{ username: string; password: string }> {
+async function loadConfig(): Promise<{ username: string; password: string; url: string }> {
   try {
     const raw = await readFile(CONFIG_FILE, "utf-8");
     const config = JSON.parse(raw);
     return {
       username: config.username ?? "",
       password: config.password ?? "",
+      url: config.url ?? "",
     };
   } catch {
-    return { username: "", password: "" };
+    return { username: "", password: "", url: "" };
   }
+}
+
+function isDevtoolsPage(url: string): boolean {
+  return (
+    url.startsWith("devtools://") ||
+    url.startsWith("chrome-devtools://") ||
+    url.startsWith("chrome://")
+  );
 }
 
 async function connect() {
@@ -39,11 +48,29 @@ async function connect() {
 
 async function getPage(browser: Browser) {
   const pages = await browser.pages();
+  const { url, username, password } = await loadConfig();
+
+  let host = "";
+  try {
+    host = url ? new URL(url).host : "";
+  } catch {
+    host = "";
+  }
+
+  const candidates = pages.filter((p) => !isDevtoolsPage(p.url()));
+
   const page =
-    pages.find((p) => !p.url().startsWith("devtools://")) ?? pages[0];
-  const auth = await loadAuth();
-  if (auth.username) {
-    await page.authenticate(auth);
+    (host && candidates.find((p) => p.url().includes(host))) ??
+    candidates.find((p) => /^https?:/.test(p.url())) ??
+    candidates[0];
+
+  if (!page) {
+    console.error("[cdp-client] No target page found in the running browser.");
+    process.exit(1);
+  }
+
+  if (username) {
+    await page.authenticate({ username, password });
   }
   return page;
 }
