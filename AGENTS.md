@@ -12,6 +12,7 @@ CSS Injector is a CLI tool that uses Puppeteer to open a target URL in Chrome, i
 |---------|-------------|
 | `npm run dev` | Run the injector (opens Chrome, navigates to URL, injects CSS, watches for changes) |
 | `npm run cdp -- <command>` | Run CDP client commands against the running browser |
+| `npm run bp -- <size>` | Resize the page viewport to a Bootstrap breakpoint (see `breakpoint.ts`) |
 | `npm run build` | Build with Vite |
 | `npm run typecheck` | TypeScript type checking |
 | `npm start` | Run the built version |
@@ -25,7 +26,10 @@ src/
 ├── css-processor.ts  # Reads CSS files from disk using fast-glob + readFile. Returns concatenated string.
 ├── js-processor.ts   # Reads JS files (scripts/) from disk, same approach as css-processor.
 ├── watcher.ts        # Chokidar file watcher. Watches a directory, debounces 100ms, calls onChange callback. Accepts a custom `reader` (CSS or JS).
+├── cdp-connection.ts # Shared CDP helpers: loads .cssinjector.json, puppeteer.connect() (with the devtools-skipping targetFilter), and getPage() which picks the site page by configured url host.
 ├── cdp-client.ts     # Standalone script that connects to running Chrome via CDP (http://127.0.0.1:9222). Supports screenshot, styles, html, select, highlight, eval, list commands.
+├── breakpoint.ts     # Standalone script that resizes the page viewport to a Bootstrap 5 breakpoint (`npm run bp -- md`) or arbitrary size (`npm run bp -- resize 500 800`).
+├── target-filter.ts  # `skipDevtoolsTargets` — passed to puppeteer.launch()/connect() so Puppeteer never attaches to the devtools:// frontend or chrome:// browser_ui targets.
 └── types.ts          # Config interface and defaults.
 ```
 

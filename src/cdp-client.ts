@@ -1,84 +1,14 @@
 #!/usr/bin/env node
 
-import puppeteer, { type Browser, type Page, type Target } from "puppeteer";
+import { type Page } from "puppeteer";
 import { mkdir } from "node:fs/promises";
-import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
-import { isDevtoolsUrl, skipDevtoolsTargets } from "./target-filter";
+import { connect, getPage } from "./cdp-connection";
 
-const CDP_URL = "http://127.0.0.1:9222";
 const DEBUG_DIR = resolve("./debug");
-const CONFIG_FILE = resolve(".cssinjector.json");
 
 async function ensureDir(filePath: string) {
   await mkdir(dirname(filePath), { recursive: true });
-}
-
-async function loadConfig(): Promise<{ username: string; password: string; url: string }> {
-  try {
-    const raw = await readFile(CONFIG_FILE, "utf-8");
-    const config = JSON.parse(raw);
-    return {
-      username: config.username ?? "",
-      password: config.password ?? "",
-      url: config.url ?? "",
-    };
-  } catch {
-    return { username: "", password: "", url: "" };
-  }
-}
-
-async function connect() {
-  try {
-    return await puppeteer.connect({
-      browserURL: CDP_URL,
-      defaultViewport: null,
-      targetFilter: skipDevtoolsTargets,
-    });
-  } catch {
-    console.error(
-      `[cdp-client] Cannot connect to ${CDP_URL}. Is css-injector running?`,
-    );
-    process.exit(1);
-  }
-}
-
-async function getPage(browser: Browser): Promise<Page> {
-  const { url, username, password } = await loadConfig();
-
-  let host = "";
-  try {
-    host = url ? new URL(url).host : "";
-  } catch {
-    host = "";
-  }
-
-  // Use browser.targets() rather than browser.pages(): pages() materialises a
-  // Page object for every target (including the DevTools frontend and the
-  // chrome:// browser_ui entries), and activating those renders the DevTools
-  // UI on top of the open DevTools window.
-  const candidates = browser
-    .targets()
-    .filter((t) => t.type() === "page" && !isDevtoolsUrl(t.url()));
-
-  const target: Target | undefined =
-    (host ? candidates.find((t) => t.url().includes(host)) : undefined) ??
-    candidates.find((t) => /^https?:/.test(t.url())) ??
-    candidates[0];
-
-  const page = await target?.page();
-
-  if (!page) {
-    console.error(
-      `[cdp-client] No site page found${host ? ` for ${host}` : ""}. Is Chrome open on the target URL?`,
-    );
-    process.exit(1);
-  }
-
-  if (username) {
-    await page.authenticate({ username, password });
-  }
-  return page;
 }
 
 async function cmdScreenshot(

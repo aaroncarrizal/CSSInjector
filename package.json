@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "cdp": "tsx src/cdp-client.ts",
+    "bp": "tsx src/breakpoint.ts",
     "clamp": "tsx src/clamp.ts",
     "vw": "tsx src/vw.ts",
     "vh": "tsx src/vh.ts",
