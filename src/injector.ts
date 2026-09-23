@@ -1,4 +1,5 @@
 import type { Browser, Page, CDPSession } from "puppeteer";
+import { skipDevtoolsTargets } from "./target-filter";
 
 export async function launchBrowser(headless: boolean): Promise<Browser> {
   const puppeteer = await import("puppeteer");
@@ -8,6 +9,7 @@ export async function launchBrowser(headless: boolean): Promise<Browser> {
     debuggingPort: 9222,
     args: headless ? [] : ["--start-maximized"],
     defaultViewport: headless ? { width: 1280, height: 720 } : null,
+    targetFilter: skipDevtoolsTargets,
   });
 }
 

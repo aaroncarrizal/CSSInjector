@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-import puppeteer, { type Browser, type Page } from "puppeteer";
+import puppeteer, { type Browser, type Page, type Target } from "puppeteer";
 import { mkdir } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
+import { isDevtoolsUrl, skipDevtoolsTargets } from "./target-filter";
 
 const CDP_URL = "http://127.0.0.1:9222";
 const DEBUG_DIR = resolve("./debug");
@@ -27,17 +28,13 @@ async function loadConfig(): Promise<{ username: string; password: string; url: 
   }
 }
 
-function isDevtoolsPage(url: string): boolean {
-  return (
-    url.startsWith("devtools://") ||
-    url.startsWith("chrome-devtools://") ||
-    url.startsWith("chrome://")
-  );
-}
-
 async function connect() {
   try {
-    return await puppeteer.connect({ browserURL: CDP_URL });
+    return await puppeteer.connect({
+      browserURL: CDP_URL,
+      defaultViewport: null,
+      targetFilter: skipDevtoolsTargets,
+    });
   } catch {
     console.error(
       `[cdp-client] Cannot connect to ${CDP_URL}. Is css-injector running?`,
@@ -46,8 +43,7 @@ async function connect() {
   }
 }
 
-async function getPage(browser: Browser) {
-  const pages = await browser.pages();
+async function getPage(browser: Browser): Promise<Page> {
   const { url, username, password } = await loadConfig();
 
   let host = "";
@@ -57,15 +53,25 @@ async function getPage(browser: Browser) {
     host = "";
   }
 
-  const candidates = pages.filter((p) => !isDevtoolsPage(p.url()));
+  // Use browser.targets() rather than browser.pages(): pages() materialises a
+  // Page object for every target (including the DevTools frontend and the
+  // chrome:// browser_ui entries), and activating those renders the DevTools
+  // UI on top of the open DevTools window.
+  const candidates = browser
+    .targets()
+    .filter((t) => t.type() === "page" && !isDevtoolsUrl(t.url()));
 
-  const page =
-    (host && candidates.find((p) => p.url().includes(host))) ??
-    candidates.find((p) => /^https?:/.test(p.url())) ??
+  const target: Target | undefined =
+    (host ? candidates.find((t) => t.url().includes(host)) : undefined) ??
+    candidates.find((t) => /^https?:/.test(t.url())) ??
     candidates[0];
 
+  const page = await target?.page();
+
   if (!page) {
-    console.error("[cdp-client] No target page found in the running browser.");
+    console.error(
+      `[cdp-client] No site page found${host ? ` for ${host}` : ""}. Is Chrome open on the target URL?`,
+    );
     process.exit(1);
   }
 
