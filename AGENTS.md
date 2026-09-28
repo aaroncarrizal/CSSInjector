@@ -170,20 +170,7 @@ Config is loaded from `.cssinjector.json` in the project root (copy `.cssinjecto
 
 ## New Dealer Setup (`/set-up`)
 
-When the user starts with `/set-up` followed by dealer info in this format:
-```
-Dealer Name: <name>
-Site Link: <url>
-FR Link: <number>
-```
-
-Execute:
-
-1. **Parse fields** – Extract Dealer Name, Site Link, FR Link.
-2. **Create git branch** – Convert Dealer Name to kebab-case (lowercase, spaces→hyphens). Check out from master: `git checkout master && git pull && git checkout -b <kebab-name>`.
-3. **Configure `.cssinjector.json`** – Set `url` to the Site Link. Set `username: "interactrv"` and `password: "access"` for HTTP Basic Auth (leave empty if the site doesn't need auth). Keep `dir`, `include`, `exclude`, `headless` unchanged.
-4. **Ensure `./styles` directory exists** (create if missing).
-5. **Report** – Tell the user the branch name and configured URL.
+When the user gives a dealer name and a build-site link (or types `/set-up`), follow the skill in [.claude/skills/set-up/SKILL.md](.claude/skills/set-up/SKILL.md). In short: slug the dealer name into a branch, create it from an up-to-date `master` and check it out, fill in `.cssinjector.json` (`url`, basic auth detected with `curl`, `stripPatterns` reset to `[]`), commit, and report back.
 
 ## List of Fixes Workflow
 
