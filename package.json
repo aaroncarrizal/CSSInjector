@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "node src/index.ts",
+    "css": "node src/css-cli.ts",
     "cdp": "node src/cdp-client.ts",
     "bp": "node src/breakpoint.ts",
     "dbg": "node src/debug.ts",
