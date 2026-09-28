@@ -12027,13 +12027,6 @@ li.unit-list-cta-btn-value-my-trade {
     display: none;
 }
 
-/* ==========================================================================
-   Home search — desktop styles moved from #top-search-container to .home-search
-   --------------------------------------------------------------------------
-   The desktop rules (>=992px and >=1200px) that used to be scoped to
-   #top-search-container / .top-search are re-scoped to .home-search. The
-   mobile (base) and tablet (>=768px) rules stay on #top-search-container.
-   ========================================================================== */
 @media (min-width: 992px) {
     .home-search {
         position: relative;
@@ -12206,6 +12199,10 @@ li.unit-list-cta-btn-value-my-trade {
         background: #efefef;
     }
 
+    #top-search-container:before {
+        pointer-events: none;
+    }
+
     #top-search-container .top-search-mobile.collapse:not(.in) {
         display: none !important;
     }
@@ -12218,6 +12215,10 @@ li.unit-list-cta-btn-value-my-trade {
         display: block;
         width: 100%;
         padding-block: 20px;
+    }
+
+    html.search-mode-ai #top-search-container #topSearchForm {
+        display: block !important;
     }
 
     #top-search-container #topSearchForm .form-group label {
