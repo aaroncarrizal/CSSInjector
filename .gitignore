@@ -1,3 +1,5 @@
 node_modules/
 dist/
 debug/
+.chrome-profile/
+.cssinjector.state.json
