@@ -1057,8 +1057,8 @@ async function main() {
   const cdp = await Cdp.connectToSite(config.url);
   try {
     const result = await spec.run({ cdp, config }, args.slice(1));
-    if (result === undefined) {
-      // The command already printed its own output (e.g. batch prints one line per sub-command).
+    if (command === "batch") {
+      // batch prints one JSON line per sub-command itself, as they complete.
     } else if (typeof result === "string") {
       console.log(result);
     } else {
