@@ -10,6 +10,8 @@ import { readSources } from "./sources.ts";
 import { ensureStateFile, readState, STATE_FILE, type State } from "./state.ts";
 import { applyViewport, describeSync, enableBasicAuth, syncCss, syncJs } from "./injector.ts";
 import { watch } from "./watcher.ts";
+import { captureConsoleAndNetwork } from "./console-log.ts";
+import { findInvalidDeclarations } from "./css-lint.ts";
 
 const program = new Command();
 
@@ -53,6 +55,8 @@ program
 
     await cdp.send("Page.enable");
     await cdp.send("Runtime.enable");
+    await cdp.send("Network.enable");
+    captureConsoleAndNetwork(cdp);
 
     if (config.username) {
       await enableBasicAuth(cdp, config.url, config.username, config.password);
@@ -67,6 +71,14 @@ program
         state = await readState(config);
         await syncCss(cdp, sources, state);
         console.log(`[css-injector] ${describeSync(sources, state)}`);
+        try {
+          const invalid = await findInvalidDeclarations(cdp, sources);
+          for (const d of invalid) {
+            console.log(`[css-injector] WARNING ${d.id}:${d.line} invalid declaration "${d.prop}: ${d.value}"`);
+          }
+        } catch {
+          // this is a hint, not a hard error — never let it break a sync
+        }
       } catch (err) {
         console.error("[css-injector] Error syncing CSS:", err);
       }

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, sep } from "node:path";
 import { Cdp } from "./cdp.ts";
 import { loadConfig, type Config } from "./config.ts";
 import { readState, writeState, bumpState } from "./state.ts";
+import { CONSOLE_LOG_FILE } from "./console-log.ts";
 
 const DEBUG_DIR = resolve("./debug");
 const PREVIEW_ID = "debug-preview";
@@ -60,8 +61,39 @@ async function readArg(value: string): Promise<string> {
   return value;
 }
 
-async function ensureDebugDir(filePath: string) {
+async function ensureParentDir(filePath: string) {
   await mkdir(dirname(filePath), { recursive: true });
+}
+
+/** Reads all of stdin as text; rejects if stdin is an interactive TTY with nothing piped in. */
+function readStdin(): Promise<string> {
+  return new Promise((resolvePromise, reject) => {
+    if (process.stdin.isTTY) {
+      reject(new Error("Usage: dbg batch @file, or pipe commands via stdin (one per line)"));
+      return;
+    }
+    let data = "";
+    process.stdin.setEncoding("utf-8");
+    process.stdin.on("data", (chunk) => (data += chunk));
+    process.stdin.on("end", () => resolvePromise(data));
+    process.stdin.on("error", reject);
+  });
+}
+
+/** CDP sometimes leaves "!important" embedded in a longhand's value (from shorthand expansion) even though `important` is already a separate flag; strip the redundant text so callers don't see it twice. */
+function stripImportant(value: string): string {
+  return value.replace(/\s*!important\s*$/i, "");
+}
+
+/** Splits one batch line into argv-style tokens, honoring "double" and 'single' quotes. */
+function tokenize(line: string): string[] {
+  const out: string[] = [];
+  const re = /"((?:\\.|[^"\\])*)"|'([^']*)'|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line))) {
+    out.push(m[1] !== undefined ? m[1].replace(/\\(.)/g, "$1") : m[2] ?? m[3]);
+  }
+  return out;
 }
 
 interface ShotOptions {
@@ -99,7 +131,7 @@ async function shoot(cdp: Cdp, opts: ShotOptions): Promise<string> {
   const path = opts.path
     ? resolve(opts.path)
     : resolve(DEBUG_DIR, `${opts.name}-${Date.now()}.${format === "png" ? "png" : "jpg"}`);
-  await ensureDebugDir(path);
+  await ensureParentDir(path);
   await writeFile(path, Buffer.from(data, "base64"));
   return path;
 }
@@ -131,6 +163,78 @@ async function withWidths<T>(
   await cdp.send("Emulation.clearDeviceMetricsOverride");
   await bumpState(config);
   return out;
+}
+
+// --- CSS "why does this lose" inspection (dbg why / dbg rules) -----------------
+
+async function findNodeId(cdp: Cdp, selector: string): Promise<number> {
+  const { root } = await cdp.send("DOM.getDocument", { depth: 0 });
+  const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector });
+  if (!nodeId) throw new Error(`No element for: ${selector}`);
+  return nodeId;
+}
+
+/** DOM.describeNode's `attributes` is a flat [name, value, name, value, ...] array. */
+function attrMap(flat: string[] = []): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (let i = 0; i < flat.length; i += 2) map[flat[i]] = flat[i + 1];
+  return map;
+}
+
+/** Listener must be attached before CSS.enable, which fires styleSheetAdded for every existing sheet. */
+async function enableCssInspection(cdp: Cdp): Promise<Map<string, any>> {
+  const headers = new Map<string, any>();
+  cdp.on("CSS.styleSheetAdded", (p) => headers.set(p.header.styleSheetId, p.header));
+  await cdp.send("DOM.enable");
+  await cdp.send("CSS.enable");
+  return headers;
+}
+
+/** The kind of source a stylesheet is, without a line number yet (cached per styleSheetId). */
+async function baseOriginLabel(cdp: Cdp, config: Config, header: any): Promise<string> {
+  if (!header) return "unknown";
+  if (header.ownerNode) {
+    const { node } = await cdp.send("DOM.describeNode", { backendNodeId: header.ownerNode });
+    const attrs = attrMap(node.attributes);
+    if (attrs["data-css-injector"]) {
+      const dir = config.dir.replace(/^\.\//, "").replace(/\/$/, "");
+      return `${dir}/${attrs["data-css-injector"]}`;
+    }
+    if (attrs["id"] === "debug-preview") return "preview";
+    return "inline <style>";
+  }
+  return header.sourceURL || "inline";
+}
+
+/** "styles/home.css:12", "preview:3", "inline <style>:1", "https://cdn/site.css:40", or "user-agent". */
+async function originLabel(
+  cdp: Cdp,
+  config: Config,
+  headers: Map<string, any>,
+  cache: Map<string, string>,
+  rule: any,
+  range: { startLine?: number } | undefined,
+): Promise<string> {
+  if (rule.origin === "user-agent") return "user-agent";
+  const styleSheetId = rule.styleSheetId;
+  if (!styleSheetId) return "inline";
+  let base = cache.get(styleSheetId);
+  if (base === undefined) {
+    base = await baseOriginLabel(cdp, config, headers.get(styleSheetId));
+    cache.set(styleSheetId, base);
+  }
+  if (base === "unknown") return base;
+  const header = headers.get(styleSheetId);
+  const startLine = range?.startLine ?? rule.style?.range?.startLine ?? 0;
+  // For an external file, header.startLine is 0 and startLine is already the
+  // absolute line. For an inline <style>, CDP's range is relative to the
+  // style tag's OWN content, while header.startLine is where that content
+  // starts in the parent HTML document — so the absolute line is the SUM of
+  // the two, not the difference (confirmed against a real page: a rule deep
+  // in an inline <style> at document line ~1716 reports range.startLine ~21-26,
+  // and header.startLine + range.startLine + 1 lands on the right line).
+  const line = (header?.startLine ?? 0) + startLine + 1;
+  return `${base}:${line}`;
 }
 
 const COMMANDS: Record<string, CommandSpec> = {
@@ -506,10 +610,12 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
 
   preview: {
-    usage: "preview <css|@file|reset>",
+    usage: "preview <css|@file|reset> [--save <path>]",
     run: async (ctx, args) => {
+      const savePath = extractFlag(args, "--save");
       const arg = args.join(" ");
-      if (!arg) throw new Error("Usage: preview <css|@file|reset>");
+      if (!arg && !savePath) throw new Error("Usage: preview <css|@file|reset> [--save <path>]");
+
       if (arg === "reset" || arg === "--reset") {
         const removed = await ctx.cdp.evaluate((id: string) => {
           const el = document.getElementById(id);
@@ -519,21 +625,56 @@ const COMMANDS: Record<string, CommandSpec> = {
         }, PREVIEW_ID);
         return removed ? "Preview cleared" : "Preview was not set";
       }
-      const css = await readArg(arg);
-      await ctx.cdp.evaluate(
-        (id: string, content: string) => {
-          let style = document.getElementById(id) as HTMLStyleElement | null;
-          if (!style) {
-            style = document.createElement("style");
-            style.id = id;
-            document.head.appendChild(style);
-          }
-          style.textContent = content;
-        },
+
+      let message = "";
+      if (arg) {
+        const css = await readArg(arg);
+        await ctx.cdp.evaluate(
+          (id: string, content: string) => {
+            let style = document.getElementById(id) as HTMLStyleElement | null;
+            if (!style) {
+              style = document.createElement("style");
+              style.id = id;
+              document.head.appendChild(style);
+            }
+            style.textContent = content;
+          },
+          PREVIEW_ID,
+          css,
+        );
+        message = `Preview applied (${css.length} bytes) as #${PREVIEW_ID}`;
+      }
+
+      if (!savePath) return message;
+
+      // Turn the tested preview into a real file: append it to a file inside
+      // config.dir, then clear the preview so the injector's own watcher picks
+      // up the same CSS from disk — what was tested is exactly what gets saved.
+      const current = await ctx.cdp.evaluate(
+        (id: string) => document.getElementById(id)?.textContent ?? "",
         PREVIEW_ID,
-        css,
       );
-      return `Preview applied (${css.length} bytes) as #${PREVIEW_ID}`;
+      if (!current.trim()) throw new Error("Nothing to save: the preview is empty");
+
+      const dirAbs = resolve(ctx.config.dir) + sep;
+      const targetAbs = resolve(savePath);
+      if (!targetAbs.startsWith(dirAbs)) {
+        throw new Error(`--save path must be inside ${ctx.config.dir} (got ${savePath})`);
+      }
+
+      await ensureParentDir(targetAbs);
+      let existing = "";
+      try {
+        existing = await readFile(targetAbs, "utf-8");
+      } catch {
+        existing = "";
+      }
+      const next = existing + (existing && !existing.endsWith("\n") ? "\n" : "") + current.trim() + "\n";
+      await writeFile(targetAbs, next, "utf-8");
+
+      await ctx.cdp.evaluate((id: string) => document.getElementById(id)?.remove(), PREVIEW_ID);
+
+      return { saved: savePath, bytes: current.trim().length + 1 };
     },
   },
 
@@ -597,6 +738,143 @@ const COMMANDS: Record<string, CommandSpec> = {
       state.viewport = { width, height, mobile };
       await writeState(state);
       return `viewport -> ${width}x${height}${mobile ? " (mobile)" : ""}`;
+    },
+  },
+
+  why: {
+    usage: "why <selector> <property>",
+    run: async (ctx, args) => {
+      const selector = args[0];
+      const property = args[1];
+      if (!selector || !property) throw new Error("Usage: why <selector> <property>");
+
+      const headers = await enableCssInspection(ctx.cdp);
+      const nodeId = await findNodeId(ctx.cdp, selector);
+      const matched = await ctx.cdp.send("CSS.getMatchedStylesForNode", { nodeId });
+      const { computedStyle } = await ctx.cdp.send("CSS.getComputedStyleForNode", { nodeId });
+
+      const labelCache = new Map<string, string>();
+      const entries: any[] = [];
+
+      for (const ruleMatch of matched.matchedCSSRules ?? []) {
+        const rule = ruleMatch.rule;
+        for (const p of rule.style.cssProperties as any[]) {
+          if (p.name !== property) continue;
+          const matchIdx = ruleMatch.matchingSelectors?.[0] ?? 0;
+          const specObj = rule.selectorList?.selectors?.[matchIdx]?.specificity;
+          entries.push({
+            selector: rule.selectorList?.text ?? "(unknown selector)",
+            value: stripImportant(p.value),
+            important: !!p.important,
+            origin: await originLabel(ctx.cdp, ctx.config, headers, labelCache, rule, p.range ?? rule.style.range),
+            media: (rule.media ?? []).map((m: any) => m.text),
+            specificity: specObj ? `${specObj.a},${specObj.b},${specObj.c}` : null,
+            valid: p.parsedOk !== false,
+            disabled: !!p.disabled,
+          });
+        }
+      }
+
+      if (matched.inlineStyle) {
+        for (const p of matched.inlineStyle.cssProperties as any[]) {
+          if (p.name !== property) continue;
+          entries.push({
+            selector: "(style attribute)",
+            value: stripImportant(p.value),
+            important: !!p.important,
+            origin: "style attribute",
+            media: [],
+            specificity: null,
+            valid: p.parsedOk !== false,
+            disabled: !!p.disabled,
+          });
+        }
+      }
+
+      const computedEntry = (computedStyle as any[]).find((c) => c.name === property);
+      const valid = entries.filter((e) => e.valid && !e.disabled);
+      const invalid = entries.filter((e) => !e.valid || e.disabled);
+
+      let winner: any = null;
+      for (let i = valid.length - 1; i >= 0; i--) {
+        if (valid[i].important) {
+          winner = valid[i];
+          break;
+        }
+      }
+      if (!winner && valid.length > 0) winner = valid[valid.length - 1];
+      const overridden = valid.filter((e) => e !== winner).reverse();
+
+      let inheritedFrom: any = null;
+      if (!winner) {
+        for (let depth = 0; depth < (matched.inherited?.length ?? 0) && !inheritedFrom; depth++) {
+          for (const rm of matched.inherited[depth].matchedCSSRules ?? []) {
+            const found = (rm.rule.style.cssProperties as any[]).find(
+              (p) => p.name === property && p.parsedOk !== false && !p.disabled,
+            );
+            if (found) {
+              inheritedFrom = {
+                depth: depth + 1,
+                selector: rm.rule.selectorList?.text,
+                value: stripImportant(found.value),
+                origin: await originLabel(ctx.cdp, ctx.config, headers, labelCache, rm.rule, found.range ?? rm.rule.style.range),
+              };
+              break;
+            }
+          }
+        }
+      }
+
+      return {
+        selector,
+        property,
+        computed: computedEntry?.value ?? null,
+        winner,
+        overridden,
+        invalid,
+        inheritedFrom,
+      };
+    },
+  },
+
+  rules: {
+    usage: "rules <selector> [--ua]",
+    run: async (ctx, args) => {
+      const ua = extractBoolFlag(args, "--ua");
+      const selector = args[0];
+      if (!selector) throw new Error("Usage: rules <selector> [--ua]");
+
+      const headers = await enableCssInspection(ctx.cdp);
+      const nodeId = await findNodeId(ctx.cdp, selector);
+      const matched = await ctx.cdp.send("CSS.getMatchedStylesForNode", { nodeId });
+      const labelCache = new Map<string, string>();
+
+      const items: any[] = [];
+      for (const ruleMatch of matched.matchedCSSRules ?? []) {
+        const rule = ruleMatch.rule;
+        if (!ua && rule.origin === "user-agent") continue;
+        const declarations = (rule.style.cssProperties as any[])
+          .filter((p) => p.text)
+          .map((p) => p.text as string);
+        items.push({
+          selector: rule.selectorList?.text ?? "(unknown)",
+          origin: await originLabel(ctx.cdp, ctx.config, headers, labelCache, rule, rule.style?.range),
+          media: (rule.media ?? []).map((m: any) => m.text),
+          declarations,
+        });
+      }
+      items.reverse(); // matchedCSSRules is lowest-to-highest priority; we want strongest first
+
+      if (matched.inlineStyle) {
+        const declarations = (matched.inlineStyle.cssProperties as any[])
+          .filter((p) => p.text)
+          .map((p) => p.text as string);
+        if (declarations.length > 0) {
+          items.push({ selector: "(style attribute)", origin: "style attribute", media: [], declarations });
+        }
+      }
+
+      return { selector, rules: items };
     },
   },
 
@@ -689,6 +967,63 @@ const COMMANDS: Record<string, CommandSpec> = {
       );
     },
   },
+
+  errors: {
+    usage: "errors [--clear]",
+    run: async (_ctx, args) => {
+      const clear = extractBoolFlag(args, "--clear");
+      if (clear) {
+        await writeFile(CONSOLE_LOG_FILE, "", "utf-8").catch(() => {});
+        return "Cleared debug/console.jsonl";
+      }
+      let text = "";
+      try {
+        text = await readFile(CONSOLE_LOG_FILE, "utf-8");
+      } catch {
+        return [];
+      }
+      return text
+        .split("\n")
+        .filter((l) => l.trim())
+        .map((l) => JSON.parse(l));
+    },
+  },
+
+  batch: {
+    usage: "batch [@file]   (or pipe commands via stdin, one per line)",
+    run: async (ctx, args) => {
+      const file = args[0];
+      const text = file ? await readArg(file) : await readStdin();
+      const lines = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith("#"));
+
+      // Prints one JSON line per command as it runs, instead of one big
+      // array at the end, so a long batch is legible and one failure
+      // doesn't hide the results that already succeeded.
+      for (const line of lines) {
+        const tokens = tokenize(line);
+        const cmdName = tokens[0];
+        if (cmdName === "batch") {
+          console.log(JSON.stringify({ cmd: line, error: "batch cannot call itself" }));
+          continue;
+        }
+        const spec = COMMANDS[cmdName];
+        if (!spec) {
+          console.log(JSON.stringify({ cmd: line, error: `Unknown command: ${cmdName}` }));
+          continue;
+        }
+        try {
+          const result = await spec.run(ctx, tokens.slice(1));
+          console.log(JSON.stringify({ cmd: line, result }));
+        } catch (err) {
+          console.log(JSON.stringify({ cmd: line, error: (err as Error).message }));
+        }
+      }
+      return undefined;
+    },
+  },
 };
 
 function printUsage() {
@@ -722,8 +1057,13 @@ async function main() {
   const cdp = await Cdp.connectToSite(config.url);
   try {
     const result = await spec.run({ cdp, config }, args.slice(1));
-    if (typeof result === "string") console.log(result);
-    else console.log(JSON.stringify(result, null, pretty ? 2 : undefined));
+    if (result === undefined) {
+      // The command already printed its own output (e.g. batch prints one line per sub-command).
+    } else if (typeof result === "string") {
+      console.log(result);
+    } else {
+      console.log(JSON.stringify(result, null, pretty ? 2 : undefined));
+    }
   } catch (err) {
     console.error(`[dbg] ${(err as Error).message}`);
     process.exitCode = 1;
