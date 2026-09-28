@@ -1,85 +1,80 @@
-import type { Browser, Page, CDPSession } from "puppeteer";
-import { skipDevtoolsTargets } from "./target-filter.ts";
+import type { Cdp } from "./cdp.ts";
+import type { State, Viewport } from "./state.ts";
+import type { Source } from "./sources.ts";
+import { runtimeSource } from "./page-runtime.ts";
 
-export async function launchBrowser(headless: boolean): Promise<Browser> {
-  const puppeteer = await import("puppeteer");
-  return puppeteer.default.launch({
-    headless,
-    channel: "chrome",
-    debuggingPort: 9222,
-    args: headless ? [] : ["--start-maximized"],
-    defaultViewport: headless ? { width: 1280, height: 720 } : null,
-    targetFilter: skipDevtoolsTargets,
+let cssRegistration: string | null = null;
+let jsRegistration: string | null = null;
+
+/** Register the CSS runtime for future documents AND update the current one live. */
+export async function syncCss(cdp: Cdp, sources: Source[], state: State): Promise<void> {
+  const source = runtimeSource({
+    local: sources.map((s) => ({ id: s.id, css: s.content })),
+    disabledLocal: state.disabledLocal,
+    disabledRemote: state.disabledRemote,
   });
-}
-
-export interface BasicAuth {
-  username: string;
-  password: string;
-}
-
-export async function navigateTo(page: Page, url: string, auth?: BasicAuth): Promise<void> {
-  if (auth && auth.username) {
-    await page.authenticate({ username: auth.username, password: auth.password });
+  if (cssRegistration) {
+    await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: cssRegistration });
   }
-  await page.goto(url, { waitUntil: "networkidle2" });
+  cssRegistration = (await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source })).identifier;
+  await cdp.send("Runtime.evaluate", { expression: source });
 }
 
-export async function injectCSS(page: Page, css: string): Promise<void> {
-  await page.evaluate((cssContent: string) => {
-    const STYLE_ID = "css-injector";
-
-    let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
-
-    if (!style) {
-      style = document.createElement("style");
-      style.id = STYLE_ID;
-      document.head.appendChild(style);
-    }
-
-    style.textContent = cssContent;
-  }, css);
-}
-
-export async function injectScripts(page: Page, js: string): Promise<void> {
-  await page.evaluate((jsContent: string) => {
-    const SCRIPT_ID = "js-injector";
-
-    document.getElementById(SCRIPT_ID)?.remove();
-
-    const script = document.createElement("script");
-    script.id = SCRIPT_ID;
-    script.textContent = jsContent;
-    (document.head || document.documentElement).appendChild(script);
-  }, js);
-}
-
-export async function registerOnNewDocument(session: CDPSession, source: string): Promise<string> {
-  await session.send("Page.enable");
-  const { identifier } = await session.send("Page.addScriptToEvaluateOnNewDocument", { source });
-  return identifier;
-}
-
-export async function removeOnNewDocument(session: CDPSession, identifier: string): Promise<void> {
-  await session.send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
-}
-
-export async function stripRemoteStyles(page: Page, patterns: string[]): Promise<void> {
-  if (patterns.length === 0) return;
-
-  const count = await page.evaluate((pats: string[]) => {
-    const links = Array.from(
-      document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'),
-    ).filter((link) =>
-      link.href.endsWith(".default.css") &&
-      pats.some((pat) => link.href.includes(pat)),
-    );
-
-    links.forEach((link) => link.remove());
-    return links.length;
-  }, patterns);
-
-  if (count > 0) {
-    console.log(`[css-injector] Stripped ${count} remote .default.css stylesheet(s) matching configured patterns`);
+/** JS injection (last resort). Same pattern: next documents + current document. */
+export async function syncJs(cdp: Cdp, sources: Source[]): Promise<void> {
+  if (jsRegistration) {
+    await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: jsRegistration });
+    jsRegistration = null;
   }
+  if (sources.length === 0) return;
+  const source = sources.map((s) => `// ${s.id}\n${s.content}`).join("\n;\n");
+  jsRegistration = (await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source })).identifier;
+  await cdp.send("Runtime.evaluate", { expression: source });
+}
+
+export async function applyViewport(cdp: Cdp, vp: Viewport | null): Promise<void> {
+  if (!vp) {
+    await cdp.send("Emulation.clearDeviceMetricsOverride");
+    await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    return;
+  }
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: vp.width,
+    height: vp.height,
+    deviceScaleFactor: 1,
+    mobile: vp.mobile,
+  });
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: vp.mobile });
+}
+
+/**
+ * HTTP basic auth, answered only for the site's own origin (credentials never go to CDNs).
+ * Every request matching the pattern is paused, so it MUST be continued.
+ */
+export async function enableBasicAuth(
+  cdp: Cdp,
+  siteUrl: string,
+  username: string,
+  password: string,
+): Promise<void> {
+  const host = new URL(siteUrl).host;
+  cdp.on("Fetch.requestPaused", (p) => {
+    void cdp.send("Fetch.continueRequest", { requestId: p.requestId }).catch(() => {});
+  });
+  cdp.on("Fetch.authRequired", (p) => {
+    void cdp
+      .send("Fetch.continueWithAuth", {
+        requestId: p.requestId,
+        authChallengeResponse: { response: "ProvideCredentials", username, password },
+      })
+      .catch(() => {});
+  });
+  await cdp.send("Fetch.enable", { handleAuthRequests: true, patterns: [{ urlPattern: `*://${host}/*` }] });
+}
+
+export function describeSync(sources: Source[], state: State): string {
+  const off = sources.filter((s) => state.disabledLocal.includes(s.id)).length;
+  return `${sources.length} local file(s) (${off} off), remote patterns off: ${
+    state.disabledRemote.length ? state.disabledRemote.join(", ") : "none"
+  }`;
 }

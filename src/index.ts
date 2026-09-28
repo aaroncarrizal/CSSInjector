@@ -1,39 +1,15 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { launchBrowser, navigateTo, injectCSS, injectScripts, stripRemoteStyles, registerOnNewDocument, removeOnNewDocument } from "./injector.ts";
-import { readCSSFiles } from "./css-processor.ts";
-import { readJSFiles } from "./js-processor.ts";
-import { startWatching } from "./watcher.ts";
-import { DEFAULT_CONFIG } from "./types.ts";
-import type { Config } from "./types.ts";
-
-const CONFIG_FILE = ".cssinjector.json";
-
-async function loadConfigFile(): Promise<Partial<Config>> {
-  try {
-    const configPath = resolve(CONFIG_FILE);
-    const raw = await readFile(configPath, "utf-8");
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-function mergeConfig(
-  fileConfig: Partial<Config>,
-  cliArgs: Partial<Config>,
-): Config {
-  return {
-    ...DEFAULT_CONFIG,
-    ...fileConfig,
-    ...Object.fromEntries(
-      Object.entries(cliArgs).filter(([, v]) => v !== undefined && v !== ""),
-    ),
-  };
-}
+import fg from "fast-glob";
+import { Cdp, pickSitePage, wsUrlFor } from "./cdp.ts";
+import { launchChrome, getOrCreatePage } from "./chrome.ts";
+import { loadConfig, type Config } from "./config.ts";
+import { readSources } from "./sources.ts";
+import { ensureStateFile, readState, STATE_FILE, type State } from "./state.ts";
+import { applyViewport, describeSync, enableBasicAuth, syncCss, syncJs } from "./injector.ts";
+import { watch } from "./watcher.ts";
 
 const program = new Command();
 
@@ -50,8 +26,6 @@ program
   .option("--username <username>", "HTTP Basic Auth username")
   .option("--password <password>", "HTTP Basic Auth password")
   .action(async (cliOptions) => {
-    const fileConfig = await loadConfigFile();
-
     const cliArgs: Partial<Config> = {};
     if (cliOptions.url) cliArgs.url = cliOptions.url;
     if (cliOptions.dir) cliArgs.dir = cliOptions.dir;
@@ -62,7 +36,7 @@ program
     if (cliOptions.username) cliArgs.username = cliOptions.username;
     if (cliOptions.password) cliArgs.password = cliOptions.password;
 
-    const config = mergeConfig(fileConfig, cliArgs);
+    const config = await loadConfig(cliArgs);
 
     if (!config.url) {
       console.error("[css-injector] Error: --url is required (or set in config)");
@@ -72,95 +46,97 @@ program
     console.log(`[css-injector] Opening ${config.url}`);
     console.log(`[css-injector] CSS directory: ${resolve(config.dir)}`);
 
-    const browser = await launchBrowser(config.headless);
-    const [page] = await browser.pages();
+    const chrome = await launchChrome(config.chromePath, config.headless);
+
+    const target = await getOrCreatePage(config.url);
+    const cdp = await Cdp.connect(wsUrlFor(target));
+
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+
+    if (config.username) {
+      await enableBasicAuth(cdp, config.url, config.username, config.password);
+    }
+
+    await ensureStateFile(config);
+    let state: State = await readState(config);
+
+    const syncAllCss = async () => {
+      try {
+        const sources = await readSources(config.dir, config.include, config.exclude);
+        state = await readState(config);
+        await syncCss(cdp, sources, state);
+        console.log(`[css-injector] ${describeSync(sources, state)}`);
+      } catch (err) {
+        console.error("[css-injector] Error syncing CSS:", err);
+      }
+    };
+
+    await syncAllCss();
+    await applyViewport(cdp, state.viewport);
+
+    if (config.scripts) {
+      const js = await readSources(config.jsDir, config.jsInclude, "");
+      await syncJs(cdp, js);
+      console.log(`[css-injector] JS injection enabled (last resort): ${js.length} file(s)`);
+    } else {
+      const jsFiles = await fg(config.jsInclude, { cwd: resolve(config.jsDir) }).catch(() => []);
+      if (jsFiles.length > 0) {
+        console.log(
+          `[css-injector] scripts/ has ${jsFiles.length} file(s) but "scripts" is false in .cssinjector.json, so they are NOT injected`,
+        );
+      }
+    }
+
+    // Navigate only if this tab isn't already on the site (a reused Chrome may already be there).
+    const alreadyOnSite = pickSitePage([target], config.url) !== undefined;
+    if (!alreadyOnSite) {
+      await cdp.send("Page.navigate", { url: config.url });
+    }
 
     console.log(`[css-injector] CDP available at http://127.0.0.1:9222`);
 
-    const initialCSS = await readCSSFiles(config.dir, config.include, config.exclude);
-    const initialJS = await readJSFiles(config.jsDir ?? "./scripts", config.jsInclude ?? "**/*.js");
-
-    let currentCSS = initialCSS;
-    let currentJS = initialJS;
-
-    // Register JS so it runs on EVERY new document at the very start (before
-    // the page's own scripts). Timing-critical fixes need this: the site's
-    // DOMContentLoaded handlers crash on nameless hero inputs and would have
-    // already run by the time scripts were injected on the 'load' event.
-    const scriptSession = await page.createCDPSession();
-    let docScriptIdentifier = "";
-    if (initialJS.length > 0) {
-      docScriptIdentifier = await registerOnNewDocument(scriptSession, initialJS);
+    const stopWatchers: (() => void)[] = [];
+    stopWatchers.push(watch(resolve(config.dir), syncAllCss));
+    stopWatchers.push(
+      watch(STATE_FILE, async () => {
+        await syncAllCss();
+        await applyViewport(cdp, state.viewport);
+      }),
+    );
+    if (config.scripts) {
+      stopWatchers.push(
+        watch(resolve(config.jsDir), async () => {
+          try {
+            const js = await readSources(config.jsDir, config.jsInclude, "");
+            await syncJs(cdp, js);
+            console.log(`[css-injector] JS updated (${js.length} file(s))`);
+          } catch (err) {
+            console.error("[css-injector] Error updating JS:", err);
+          }
+        }),
+      );
     }
 
-    await navigateTo(page, config.url, { username: config.username ?? "", password: config.password ?? "" });
+    console.log(
+      "[css-injector] Ready. CDP on http://127.0.0.1:9222. Toggle sources with npm run css; debug with npm run dbg.",
+    );
 
-    await stripRemoteStyles(page, config.stripPatterns);
-
-    await injectCSS(page, initialCSS);
-    console.log(`[css-injector] Injected ${initialCSS.length} bytes of CSS`);
-
-    if (initialJS.length > 0) {
-      console.log(`[css-injector] Registered ${initialJS.length} bytes of JS for new documents`);
-    }
-
-    page.on("load", async () => {
-      try {
-        await stripRemoteStyles(page, config.stripPatterns);
-        await injectCSS(page, currentCSS);
-        console.log(`[css-injector] Re-injected CSS (${currentCSS.length} bytes) after navigation`);
-      } catch (err) {
-        console.error("[css-injector] Error re-injecting CSS:", err);
-      }
-    });
-
-    const stopWatching = startWatching({
-      dir: config.dir,
-      include: config.include,
-      exclude: config.exclude,
-      onChange: async (css) => {
-        try {
-          currentCSS = css;
-          await injectCSS(page, css);
-          console.log(`[css-injector] CSS updated (${css.length} bytes)`);
-        } catch (err) {
-          console.error("[css-injector] Error updating CSS:", err);
-        }
-      },
-    });
-
-    const stopWatchingJS = startWatching({
-      dir: config.jsDir ?? "./scripts",
-      include: config.jsInclude ?? "**/*.js",
-      exclude: "",
-      reader: readJSFiles,
-      onChange: async (js) => {
-        try {
-          currentJS = js;
-          if (docScriptIdentifier) {
-            await removeOnNewDocument(scriptSession, docScriptIdentifier);
-            docScriptIdentifier = "";
-          }
-          if (js.length > 0) {
-            docScriptIdentifier = await registerOnNewDocument(scriptSession, js);
-          }
-          await injectScripts(page, js);
-          console.log(`[css-injector] JS updated (${js.length} bytes)`);
-        } catch (err) {
-          console.error("[css-injector] Error updating JS:", err);
-        }
-      },
-    });
-
-    console.log("[css-injector] Watching for CSS/JS changes. Press Ctrl+C to stop.");
-
+    let cleaningUp = false;
     const cleanup = async () => {
+      if (cleaningUp) return;
+      cleaningUp = true;
       console.log("\n[css-injector] Shutting down...");
-      stopWatching();
-      stopWatchingJS();
-      await browser.close();
+      stopWatchers.forEach((stop) => stop());
+      cdp.close();
+      chrome?.kill();
       process.exit(0);
     };
+
+    cdp.on("close", () => {
+      console.log("[css-injector] Tab closed / Chrome exited. Stopping.");
+      void cleanup();
+    });
 
     process.on("SIGINT", cleanup);
     process.on("SIGTERM", cleanup);
