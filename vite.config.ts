@@ -10,7 +10,7 @@ export default defineConfig({
     },
     rollupOptions: {
       external: (id: string) =>
-        id.startsWith("node:") || ["puppeteer", "chokidar", "fast-glob", "commander"].includes(id),
+        id.startsWith("node:") || ["chokidar", "fast-glob", "commander"].includes(id),
     },
     outDir: "dist",
     sourcemap: true,

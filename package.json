@@ -9,9 +9,7 @@
   "scripts": {
     "dev": "node src/index.ts",
     "css": "node src/css-cli.ts",
-    "cdp": "node src/cdp-client.ts",
-    "bp": "node src/breakpoint.ts",
-    "dbg": "node src/debug.ts",
+    "dbg": "node src/dbg.ts",
     "clamp": "node src/clamp.ts",
     "vw": "node src/vw.ts",
     "vh": "node src/vh.ts",
@@ -23,22 +21,18 @@
     "css",
     "inject",
     "hot-reload",
-    "puppeteer",
+    "cdp",
     "devtools"
   ],
   "license": "MIT",
   "dependencies": {
     "chokidar": "^4.0.3",
     "commander": "^13.1.0",
-    "fast-glob": "^3.3.3",
-    "puppeteer": "^24.2.1"
+    "fast-glob": "^3.3.3"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
     "typescript": "^5.8.2",
     "vite": "^6.2.3"
-  },
-  "allowScripts": {
-    "puppeteer@24.43.1": true
   }
 }

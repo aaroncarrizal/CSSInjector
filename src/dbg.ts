@@ -1,0 +1,735 @@
+#!/usr/bin/env node
+
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolve, dirname } from "node:path";
+import { Cdp } from "./cdp.ts";
+import { loadConfig, type Config } from "./config.ts";
+import { readState, writeState, bumpState } from "./state.ts";
+
+const DEBUG_DIR = resolve("./debug");
+const PREVIEW_ID = "debug-preview";
+const OUTLINE_ID = "debug-outline-style";
+const HTML_BACKUP_ATTR = "data-dbg-html";
+
+const BOOTSTRAP_BREAKPOINTS: Record<string, number> = {
+  xs: 375,
+  sm: 576,
+  md: 768,
+  lg: 992,
+  xl: 1200,
+  xxl: 1400,
+};
+
+const DEFAULT_STYLE_PROPS = [
+  "display", "position", "top", "right", "bottom", "left", "width", "height",
+  "min-width", "max-width", "min-height", "max-height", "margin", "padding",
+  "box-sizing", "flex", "flex-direction", "flex-wrap", "justify-content",
+  "align-items", "gap", "grid-template-columns", "font-family", "font-size",
+  "font-weight", "line-height", "color", "background-color", "background-image",
+  "border", "border-radius", "z-index", "overflow", "opacity", "visibility", "transform",
+];
+
+interface Ctx {
+  cdp: Cdp;
+  config: Config;
+}
+type CommandFn = (ctx: Ctx, args: string[]) => Promise<unknown>;
+interface CommandSpec {
+  usage: string;
+  run: CommandFn;
+}
+
+function extractFlag(args: string[], name: string): string | undefined {
+  const idx = args.indexOf(name);
+  if (idx === -1) return undefined;
+  const value = args[idx + 1];
+  args.splice(idx, 2);
+  return value;
+}
+
+function extractBoolFlag(args: string[], name: string): boolean {
+  const idx = args.indexOf(name);
+  if (idx === -1) return false;
+  args.splice(idx, 1);
+  return true;
+}
+
+/** `@path/to/file` reads the file; anything else is returned as-is. */
+async function readArg(value: string): Promise<string> {
+  if (value.startsWith("@")) return readFile(resolve(value.slice(1)), "utf-8");
+  return value;
+}
+
+async function ensureDebugDir(filePath: string) {
+  await mkdir(dirname(filePath), { recursive: true });
+}
+
+interface ShotOptions {
+  clip?: { x: number; y: number; width: number; height: number };
+  full?: boolean;
+  png?: boolean;
+  fullRes?: boolean;
+  name: string;
+  path?: string;
+}
+
+/** Screenshot a clip (or viewport/full page) — default JPEG q70, downscaled to <=1280px wide. */
+async function shoot(cdp: Cdp, opts: ShotOptions): Promise<string> {
+  const metrics = await cdp.send("Page.getLayoutMetrics");
+  let clip = opts.clip;
+  if (opts.full) {
+    clip = {
+      x: 0,
+      y: 0,
+      width: metrics.cssContentSize.width,
+      height: Math.min(metrics.cssContentSize.height, 16000),
+    };
+  } else if (!clip) {
+    const v = metrics.cssVisualViewport;
+    clip = { x: v.pageX, y: v.pageY, width: v.clientWidth, height: v.clientHeight };
+  }
+  const scale = opts.fullRes ? 1 : Math.min(1, 1280 / clip.width);
+  const format = opts.png ? "png" : "jpeg";
+  const { data } = await cdp.send("Page.captureScreenshot", {
+    format,
+    ...(format === "jpeg" ? { quality: 70 } : {}),
+    clip: { ...clip, scale },
+    captureBeyondViewport: true,
+  });
+  const path = opts.path
+    ? resolve(opts.path)
+    : resolve(DEBUG_DIR, `${opts.name}-${Date.now()}.${format === "png" ? "png" : "jpg"}`);
+  await ensureDebugDir(path);
+  await writeFile(path, Buffer.from(data, "base64"));
+  return path;
+}
+
+/**
+ * Emulate each width in turn, run fn(width), then clear the override and
+ * restore the injector's persisted viewport (bumpState re-applies state.viewport
+ * — CDP emulation belongs to the connection that set it, and this short-lived
+ * dbg process is about to disconnect, so the long-lived injector session must
+ * hold whatever viewport should persist).
+ */
+async function withWidths<T>(
+  cdp: Cdp,
+  config: Config,
+  widths: number[],
+  fn: (width: number) => Promise<T>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (const width of widths) {
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: width < 768,
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    out.push(await fn(width));
+  }
+  await cdp.send("Emulation.clearDeviceMetricsOverride");
+  await bumpState(config);
+  return out;
+}
+
+const COMMANDS: Record<string, CommandSpec> = {
+  screenshot: {
+    usage: "screenshot [path] [--png] [--full-res] [--at w1,w2,...]",
+    run: async (ctx, args) => {
+      const png = extractBoolFlag(args, "--png");
+      const fullRes = extractBoolFlag(args, "--full-res");
+      const at = extractFlag(args, "--at");
+      if (at) {
+        const widths = at.split(",").map(Number).filter((n) => n > 0);
+        return withWidths(ctx.cdp, ctx.config, widths, (width) =>
+          shoot(ctx.cdp, { png, fullRes, name: `screenshot-${width}` }),
+        );
+      }
+      return shoot(ctx.cdp, { png, fullRes, name: "screenshot", path: args[0] });
+    },
+  },
+
+  fullpage: {
+    usage: "fullpage [path] [--png] [--full-res]",
+    run: async (ctx, args) => {
+      const png = extractBoolFlag(args, "--png");
+      const fullRes = extractBoolFlag(args, "--full-res");
+      return shoot(ctx.cdp, { full: true, png, fullRes, name: "fullpage", path: args[0] });
+    },
+  },
+
+  crop: {
+    usage: "crop <selector> [path] [--png] [--full-res] [--at w1,w2,...]",
+    run: async (ctx, args) => {
+      const png = extractBoolFlag(args, "--png");
+      const fullRes = extractBoolFlag(args, "--full-res");
+      const at = extractFlag(args, "--at");
+      const selector = args[0];
+      const path = args[1];
+      if (!selector) throw new Error("Usage: crop <selector> [path]");
+
+      const getClip = () =>
+        ctx.cdp.evaluate((sel: string) => {
+          const el = document.querySelector(sel);
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height };
+        }, selector);
+
+      if (at) {
+        const widths = at.split(",").map(Number).filter((n) => n > 0);
+        return withWidths(ctx.cdp, ctx.config, widths, async (width) => {
+          const clip = await getClip();
+          if (!clip) throw new Error(`No element found for: ${selector}`);
+          return shoot(ctx.cdp, { clip, png, fullRes, name: `crop-${width}` });
+        });
+      }
+      const clip = await getClip();
+      if (!clip) throw new Error(`No element found for: ${selector}`);
+      return shoot(ctx.cdp, { clip, png, fullRes, name: "crop", path });
+    },
+  },
+
+  outline: {
+    usage: "outline [selector|reset]",
+    run: async (ctx, args) => {
+      const selector = args[0];
+      if (selector === "reset") {
+        await ctx.cdp.evaluate((id: string) => document.getElementById(id)?.remove(), OUTLINE_ID);
+        return "Outline overlay removed";
+      }
+      const count = await ctx.cdp.evaluate(
+        (id: string, sel: string | null) => {
+          document.getElementById(id)?.remove();
+          const style = document.createElement("style");
+          style.id = id;
+          style.textContent = sel
+            ? `${sel}{outline:2px solid red !important;outline-offset:-2px !important;}`
+            : `body *{outline:1px solid rgba(255,0,0,.35) !important;}`;
+          document.head.appendChild(style);
+          return document.querySelectorAll(sel ?? "body *").length;
+        },
+        OUTLINE_ID,
+        selector ?? null,
+      );
+      const path = await shoot(ctx.cdp, { name: "outline" });
+      return { count, path };
+    },
+  },
+
+  styles: {
+    usage: "styles <selector> [--all]",
+    run: async (ctx, args) => {
+      const all = extractBoolFlag(args, "--all");
+      const selector = args[0];
+      if (!selector) throw new Error("Usage: styles <selector> [--all]");
+      return ctx.cdp.evaluate(
+        (sel: string, props: string[], wantAll: boolean) => {
+          const el = document.querySelector(sel);
+          if (!el) return { error: `No element found for selector: ${sel}` };
+          const computed = window.getComputedStyle(el);
+          const styleObj: Record<string, string> = {};
+          if (wantAll) {
+            for (let i = 0; i < computed.length; i++) {
+              const prop = computed[i];
+              styleObj[prop] = computed.getPropertyValue(prop);
+            }
+          } else {
+            for (const prop of props) {
+              styleObj[prop] = computed.getPropertyValue(prop);
+            }
+          }
+          const rect = el.getBoundingClientRect();
+          return {
+            selector: sel,
+            tag: el.tagName.toLowerCase(),
+            id: el.id || null,
+            classList: Array.from(el.classList),
+            boundingBox: {
+              x: Math.round(rect.x),
+              y: Math.round(rect.y),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+            },
+            styles: styleObj,
+          };
+        },
+        selector,
+        DEFAULT_STYLE_PROPS,
+        all,
+      );
+    },
+  },
+
+  select: {
+    usage: "select <selector>",
+    run: async (ctx, args) => {
+      const selector = args[0];
+      if (!selector) throw new Error("Usage: select <selector>");
+      return ctx.cdp.evaluate((sel: string) => {
+        const elements = document.querySelectorAll(sel);
+        if (elements.length === 0) return { error: `No elements found for selector: ${sel}` };
+        const info = Array.from(elements).map((el, i) => {
+          const rect = el.getBoundingClientRect();
+          const computed = window.getComputedStyle(el);
+          return {
+            index: i,
+            tag: el.tagName.toLowerCase(),
+            id: el.id || null,
+            classList: Array.from(el.classList),
+            visible: computed.display !== "none" && computed.visibility !== "hidden",
+            opacity: computed.opacity,
+            boundingBox: {
+              x: Math.round(rect.x),
+              y: Math.round(rect.y),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+            },
+          };
+        });
+        return { selector: sel, count: elements.length, elements: info };
+      }, selector);
+    },
+  },
+
+  html: {
+    usage: "html [selector]",
+    run: async (ctx, args) => {
+      const selector = args[0] ?? null;
+      return ctx.cdp.evaluate((sel: string | null) => {
+        if (sel) {
+          const el = document.querySelector(sel);
+          return el ? el.outerHTML : `No element found for selector: ${sel}`;
+        }
+        return document.documentElement.outerHTML;
+      }, selector);
+    },
+  },
+
+  eval: {
+    usage: "eval <expression>",
+    run: async (ctx, args) => {
+      const expression = args.join(" ");
+      if (!expression) throw new Error("Usage: eval <expression>");
+      const res = await ctx.cdp.send("Runtime.evaluate", {
+        expression,
+        returnByValue: true,
+        awaitPromise: true,
+      });
+      if (res.exceptionDetails) {
+        return { error: res.exceptionDetails.exception?.description ?? res.exceptionDetails.text };
+      }
+      return res.result.value;
+    },
+  },
+
+  find: {
+    usage: "find <text> [limit]",
+    run: async (ctx, args) => {
+      if (args.length === 0) throw new Error("Usage: find <text> [limit]");
+      const rest = [...args];
+      let limit = 15;
+      const last = rest[rest.length - 1];
+      if (rest.length > 1 && /^\d+$/.test(last)) {
+        limit = Number(last);
+        rest.pop();
+      }
+      const text = rest.join(" ");
+      return ctx.cdp.evaluate(
+        (needle: string, lim: number) => {
+          const lower = needle.toLowerCase();
+          const out: unknown[] = [];
+          for (const el of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
+            const own = (el.textContent || "").toLowerCase();
+            if (!own.includes(lower)) continue;
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 && rect.height === 0) continue;
+
+            let childHasText = false;
+            for (const child of Array.from(el.children)) {
+              if ((child.textContent || "").toLowerCase().includes(lower)) {
+                childHasText = true;
+                break;
+              }
+            }
+            if (childHasText) continue;
+
+            let selector: string;
+            if (el.id && !/^\d/.test(el.id)) {
+              selector = "#" + CSS.escape(el.id);
+            } else {
+              let path = "";
+              let node: Element | null = el;
+              for (let depth = 0; node && node !== document.body && depth < 5; depth++) {
+                let part = node.tagName.toLowerCase();
+                if (node.id && !/^\d/.test(node.id)) {
+                  path = "#" + CSS.escape(node.id) + (path ? " > " + path : "");
+                  break;
+                }
+                const classes = Array.from(node.classList).slice(0, 2);
+                part += classes.map((c) => "." + CSS.escape(c)).join("");
+                const parent = node.parentElement;
+                const current = node;
+                if (parent) {
+                  const same = Array.from(parent.children).filter((c) => c.tagName === current.tagName);
+                  if (same.length > 1) part += `:nth-of-type(${same.indexOf(current) + 1})`;
+                }
+                path = path ? part + " > " + path : part;
+                node = node.parentElement;
+              }
+              selector = path;
+            }
+
+            out.push({
+              selector,
+              tag: el.tagName.toLowerCase(),
+              id: el.id || null,
+              classes: Array.from(el.classList),
+              box: {
+                x: Math.round(rect.x),
+                y: Math.round(rect.y),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+              },
+              text: (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 90),
+            });
+          }
+          return out.slice(0, lim);
+        },
+        text,
+        limit,
+      );
+    },
+  },
+
+  box: {
+    usage: "box <selector>",
+    run: async (ctx, args) => {
+      const selector = args[0];
+      if (!selector) throw new Error("Usage: box <selector>");
+      return ctx.cdp.evaluate((sel: string) => {
+        const el = document.querySelector<HTMLElement>(sel);
+        if (!el) return { error: `No element found for: ${sel}` };
+
+        const cs = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+
+        const ancestors: unknown[] = [];
+        let node = el.parentElement;
+        for (let i = 0; i < 6 && node; i++) {
+          const pcs = getComputedStyle(node);
+          const r = node.getBoundingClientRect();
+          ancestors.push({
+            tag: node.tagName.toLowerCase(),
+            id: node.id || null,
+            classes: Array.from(node.classList).slice(0, 4),
+            display: pcs.display,
+            maxWidth: pcs.maxWidth,
+            width: Math.round(r.width),
+            margin: pcs.margin,
+            padding: pcs.padding,
+          });
+          node = node.parentElement;
+        }
+
+        return {
+          selector: sel,
+          tag: el.tagName.toLowerCase(),
+          id: el.id || null,
+          classes: Array.from(el.classList),
+          box: {
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          },
+          layout: {
+            display: cs.display,
+            position: cs.position,
+            width: cs.width,
+            height: cs.height,
+            maxWidth: cs.maxWidth,
+            margin: cs.margin,
+            padding: cs.padding,
+            textAlign: cs.textAlign,
+            flex: cs.display.includes("flex")
+              ? {
+                  direction: cs.flexDirection,
+                  justify: cs.justifyContent,
+                  align: cs.alignItems,
+                  gap: cs.gap,
+                }
+              : null,
+          },
+          ancestors,
+        };
+      }, selector);
+    },
+  },
+
+  check: {
+    usage: "check <selector> [widths...]",
+    run: async (ctx, args) => {
+      const selector = args[0];
+      if (!selector) throw new Error("Usage: check <selector> [widths...]");
+      const rawWidths = args.slice(1).map(Number).filter((n) => n > 0);
+      const widths = rawWidths.length > 0 ? rawWidths : Object.values(BOOTSTRAP_BREAKPOINTS);
+      const results = await withWidths(ctx.cdp, ctx.config, widths, async (width) => {
+        const info = await ctx.cdp.evaluate((sel: string) => {
+          const el = document.querySelector<HTMLElement>(sel);
+          if (!el) return { present: false };
+          const cs = getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          return {
+            present: true,
+            display: cs.display,
+            visibility: cs.visibility,
+            opacity: cs.opacity,
+            elementWidth: Math.round(r.width),
+            elementHeight: Math.round(r.height),
+            x: Math.round(r.x),
+            visible:
+              cs.display !== "none" &&
+              cs.visibility !== "hidden" &&
+              Number(cs.opacity) > 0 &&
+              r.width > 0 &&
+              r.height > 0,
+            inViewport: r.top < window.innerHeight && r.bottom > 0 && r.left < window.innerWidth && r.right > 0,
+          };
+        }, selector);
+        const name = Object.entries(BOOTSTRAP_BREAKPOINTS).find(([, v]) => v === width)?.[0];
+        return { width, breakpoint: name ?? null, ...info };
+      });
+      return { selector, results };
+    },
+  },
+
+  preview: {
+    usage: "preview <css|@file|reset>",
+    run: async (ctx, args) => {
+      const arg = args.join(" ");
+      if (!arg) throw new Error("Usage: preview <css|@file|reset>");
+      if (arg === "reset" || arg === "--reset") {
+        const removed = await ctx.cdp.evaluate((id: string) => {
+          const el = document.getElementById(id);
+          if (!el) return false;
+          el.remove();
+          return true;
+        }, PREVIEW_ID);
+        return removed ? "Preview cleared" : "Preview was not set";
+      }
+      const css = await readArg(arg);
+      await ctx.cdp.evaluate(
+        (id: string, content: string) => {
+          let style = document.getElementById(id) as HTMLStyleElement | null;
+          if (!style) {
+            style = document.createElement("style");
+            style.id = id;
+            document.head.appendChild(style);
+          }
+          style.textContent = content;
+        },
+        PREVIEW_ID,
+        css,
+      );
+      return `Preview applied (${css.length} bytes) as #${PREVIEW_ID}`;
+    },
+  },
+
+  set: {
+    usage: "set <selector> <prop> <value>",
+    run: async (ctx, args) => {
+      const [selector, prop, ...valueParts] = args;
+      const value = valueParts.join(" ");
+      if (!selector || !prop || !value) throw new Error("Usage: set <selector> <prop> <value>");
+      await ctx.cdp.evaluate(
+        (id: string, sel: string, p: string, v: string) => {
+          let style = document.getElementById(id) as HTMLStyleElement | null;
+          if (!style) {
+            style = document.createElement("style");
+            style.id = id;
+            document.head.appendChild(style);
+          }
+          style.textContent += `\n${sel}{${p}:${v};}`;
+        },
+        PREVIEW_ID,
+        selector,
+        prop,
+        value,
+      );
+      return `Added: ${selector} { ${prop}: ${value}; }`;
+    },
+  },
+
+  bp: {
+    usage: "bp <xs|sm|md|lg|xl|xxl|reset> [height]",
+    run: async (ctx, args) => {
+      const name = args[0];
+      if (!name) throw new Error("Usage: bp <xs|sm|md|lg|xl|xxl|reset> [height]");
+      const state = await readState(ctx.config);
+      if (name === "reset") {
+        state.viewport = null;
+        await writeState(state);
+        return "viewport -> reset (real window size)";
+      }
+      const key = name.toLowerCase().replace(/^bp-/, "");
+      const width = BOOTSTRAP_BREAKPOINTS[key];
+      if (!width) {
+        throw new Error(`Unknown breakpoint "${name}". Options: ${Object.keys(BOOTSTRAP_BREAKPOINTS).join(", ")}`);
+      }
+      const height = Number(args[1]) || 900;
+      const mobile = width < 768;
+      state.viewport = { width, height, mobile };
+      await writeState(state);
+      return `viewport -> ${width}x${height}${mobile ? " (mobile)" : ""}`;
+    },
+  },
+
+  resize: {
+    usage: "resize <width> [height]",
+    run: async (ctx, args) => {
+      const width = Number(args[0]);
+      if (!Number.isFinite(width) || width <= 0) throw new Error("Usage: resize <width> [height]");
+      const height = Number(args[1]) || 900;
+      const mobile = width < 768;
+      const state = await readState(ctx.config);
+      state.viewport = { width, height, mobile };
+      await writeState(state);
+      return `viewport -> ${width}x${height}${mobile ? " (mobile)" : ""}`;
+    },
+  },
+
+  replace: {
+    usage: "replace <selector> <html|@file>",
+    run: async (ctx, args) => {
+      const selector = args[0];
+      const htmlArg = args.slice(1).join(" ");
+      if (!selector || !htmlArg) throw new Error("Usage: replace <selector> <html|@file>");
+      const html = await readArg(htmlArg);
+      return ctx.cdp.evaluate(
+        (sel: string, htmlContent: string, attr: string) => {
+          const w = window as any;
+          w.__dbgHtmlBackup ||= {};
+          const el = document.querySelector(sel);
+          if (!el) return { error: `No element found for: ${sel}` };
+          if (!(sel in w.__dbgHtmlBackup)) w.__dbgHtmlBackup[sel] = el.outerHTML;
+          const template = document.createElement("template");
+          template.innerHTML = htmlContent;
+          const nodes = Array.from(template.content.childNodes);
+          for (const node of nodes) {
+            if (node.nodeType === 1) (node as Element).setAttribute(attr, sel);
+          }
+          el.replaceWith(...nodes);
+          return { replaced: nodes.filter((n) => n.nodeType === 1).length };
+        },
+        selector,
+        html,
+        HTML_BACKUP_ATTR,
+      );
+    },
+  },
+
+  inner: {
+    usage: "inner <selector> <html|@file>",
+    run: async (ctx, args) => {
+      const selector = args[0];
+      const htmlArg = args.slice(1).join(" ");
+      if (!selector || !htmlArg) throw new Error("Usage: inner <selector> <html|@file>");
+      const html = await readArg(htmlArg);
+      return ctx.cdp.evaluate(
+        (sel: string, htmlContent: string, attr: string) => {
+          const w = window as any;
+          w.__dbgHtmlBackup ||= {};
+          const el = document.querySelector(sel);
+          if (!el) return { error: `No element found for: ${sel}` };
+          if (!(sel in w.__dbgHtmlBackup)) w.__dbgHtmlBackup[sel] = el.outerHTML;
+          el.innerHTML = htmlContent;
+          el.setAttribute(attr, sel);
+          return { replaced: 1 };
+        },
+        selector,
+        html,
+        HTML_BACKUP_ATTR,
+      );
+    },
+  },
+
+  restore: {
+    usage: "restore [selector]",
+    run: async (ctx, args) => {
+      const selector = args[0] ?? null;
+      return ctx.cdp.evaluate(
+        (sel: string | null, attr: string) => {
+          const w = window as any;
+          w.__dbgHtmlBackup ||= {};
+          const keys = sel ? [sel] : Object.keys(w.__dbgHtmlBackup);
+          const restored: string[] = [];
+          for (const key of keys) {
+            if (!(key in w.__dbgHtmlBackup)) continue;
+            const matches = Array.from(document.querySelectorAll(`[${attr}]`)).filter(
+              (n) => n.getAttribute(attr) === key,
+            );
+            if (matches.length === 0) {
+              delete w.__dbgHtmlBackup[key];
+              continue;
+            }
+            const template = document.createElement("template");
+            template.innerHTML = w.__dbgHtmlBackup[key];
+            const nodes = Array.from(template.content.childNodes);
+            matches[0].replaceWith(...nodes);
+            for (let i = 1; i < matches.length; i++) matches[i].remove();
+            delete w.__dbgHtmlBackup[key];
+            restored.push(key);
+          }
+          return { restored };
+        },
+        selector,
+        HTML_BACKUP_ATTR,
+      );
+    },
+  },
+};
+
+function printUsage() {
+  console.log("Usage: npm run dbg -- <command> [args] [--pretty]\n");
+  console.log("Commands:");
+  for (const spec of Object.values(COMMANDS)) {
+    console.log(`  ${spec.usage}`);
+  }
+  console.log("  help                                     Show this help");
+}
+
+async function main() {
+  const rawArgs = process.argv.slice(2);
+  const pretty = rawArgs.includes("--pretty");
+  const args = rawArgs.filter((a) => a !== "--pretty");
+  const command = args[0];
+
+  if (!command || command === "help") {
+    printUsage();
+    return;
+  }
+
+  const spec = COMMANDS[command];
+  if (!spec) {
+    console.error(`Unknown command: ${command}`);
+    printUsage();
+    process.exit(1);
+  }
+
+  const config = await loadConfig();
+  const cdp = await Cdp.connectToSite(config.url);
+  try {
+    const result = await spec.run({ cdp, config }, args.slice(1));
+    if (typeof result === "string") console.log(result);
+    else console.log(JSON.stringify(result, null, pretty ? 2 : undefined));
+  } catch (err) {
+    console.error(`[dbg] ${(err as Error).message}`);
+    process.exitCode = 1;
+  } finally {
+    cdp.close();
+  }
+}
+
+main();
