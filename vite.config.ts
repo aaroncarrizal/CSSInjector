@@ -2,21 +2,15 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   build: {
-    target: "node22",
+    target: "node24",
     lib: {
       entry: "src/index.ts",
       formats: ["es"],
       fileName: "index",
     },
     rollupOptions: {
-      external: [
-        "puppeteer",
-        "chokidar",
-        "fast-glob",
-        "commander",
-        "node:fs/promises",
-        "node:path",
-      ],
+      external: (id: string) =>
+        id.startsWith("node:") || ["puppeteer", "chokidar", "fast-glob", "commander"].includes(id),
     },
     outDir: "dist",
     sourcemap: true,

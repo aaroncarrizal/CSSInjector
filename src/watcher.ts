@@ -1,6 +1,6 @@
 import chokidar from "chokidar";
 import { resolve } from "node:path";
-import { readCSSFiles } from "./css-processor.js";
+import { readCSSFiles } from "./css-processor.ts";
 
 export interface WatcherOptions {
   dir: string;

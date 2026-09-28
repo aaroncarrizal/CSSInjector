@@ -3,12 +3,12 @@
 import { Command } from "commander";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { launchBrowser, navigateTo, injectCSS, injectScripts, stripRemoteStyles, registerOnNewDocument, removeOnNewDocument } from "./injector.js";
-import { readCSSFiles } from "./css-processor.js";
-import { readJSFiles } from "./js-processor.js";
-import { startWatching } from "./watcher.js";
-import { DEFAULT_CONFIG } from "./types.js";
-import type { Config } from "./types.js";
+import { launchBrowser, navigateTo, injectCSS, injectScripts, stripRemoteStyles, registerOnNewDocument, removeOnNewDocument } from "./injector.ts";
+import { readCSSFiles } from "./css-processor.ts";
+import { readJSFiles } from "./js-processor.ts";
+import { startWatching } from "./watcher.ts";
+import { DEFAULT_CONFIG } from "./types.ts";
+import type { Config } from "./types.ts";
 
 const CONFIG_FILE = ".cssinjector.json";
 

@@ -1,5 +1,5 @@
 import type { Browser, Page, CDPSession } from "puppeteer";
-import { skipDevtoolsTargets } from "./target-filter";
+import { skipDevtoolsTargets } from "./target-filter.ts";
 
 export async function launchBrowser(headless: boolean): Promise<Browser> {
   const puppeteer = await import("puppeteer");

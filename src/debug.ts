@@ -3,7 +3,7 @@
 import type { Page } from "puppeteer";
 import { mkdir, readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
-import { connect, getPage } from "./cdp-connection";
+import { connect, getPage } from "./cdp-connection.ts";
 
 const DEBUG_DIR = resolve("./debug");
 const PREVIEW_ID = "debug-preview";

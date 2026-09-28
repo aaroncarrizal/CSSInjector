@@ -1,7 +1,7 @@
 import puppeteer, { type Browser, type Page, type Target } from "puppeteer";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { isDevtoolsUrl, skipDevtoolsTargets } from "./target-filter";
+import { isDevtoolsUrl, skipDevtoolsTargets } from "./target-filter.ts";
 
 export const CDP_URL = "http://127.0.0.1:9222";
 export const CONFIG_FILE = resolve(".cssinjector.json");

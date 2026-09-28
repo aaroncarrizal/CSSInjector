@@ -1,3 +1,4 @@
+export {};
 const size = Number(process.argv[2]);
 
 if (isNaN(size)) {

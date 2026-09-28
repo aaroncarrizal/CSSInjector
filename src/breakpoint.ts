@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import type { Page } from "puppeteer";
-import { connect, getPage } from "./cdp-connection";
+import { connect, getPage } from "./cdp-connection.ts";
 
 // Bootstrap 5 default breakpoints (min-width). xs has no min, so a typical
 // phone width is used to exercise the xs range.
