@@ -1,144 +1,101 @@
 # CSS Injector
 
-A CLI tool that injects local CSS files into any published website with instant hot reload support. Uses Puppeteer to launch Chrome, navigate to a target URL, and inject your CSS — updating live whenever you save a file.
+A CLI tool that injects local CSS files into any published website with instant hot reload, and lets you switch individual CSS sources — your own files or the site's own stylesheets — on and off while the page stays open. It launches Chrome directly (no browser-automation framework) and talks to it only through one page's own Chrome DevTools Protocol (CDP) connection, so opening DevTools alongside it never causes trouble.
+
+## Requirements
+
+- [Node.js](https://nodejs.org/) 24 or newer (it runs the TypeScript in `src/` directly, no build step needed for day-to-day use)
+- Google Chrome installed
 
 ## Quick Start
 
 ```bash
 npm install
-npx puppeteer browsers install chrome
+cp .cssinjector.example.json .cssinjector.json
+# edit .cssinjector.json and set "url" to your target site
 npm run dev
 ```
 
-## Usage
+## Config
 
-### Basic
-
-```bash
-npm run dev
-```
-
-Reads `.cssinjector.json` from the project root for configuration.
-
-### With CLI Flags
-
-```bash
-npm run dev -- --url https://example.com --dir ./styles
-```
-
-### CLI Options
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-u, --url <url>` | Target URL to open | (from config) |
-| `-d, --dir <path>` | Directory containing CSS files | `./styles` |
-| `-i, --include <glob>` | Glob pattern to include | `**/*.css` |
-| `-e, --exclude <glob>` | Glob pattern to exclude | (none) |
-| `--headless` | Run in headless mode | `false` |
-
-### Config File
-
-Create `.cssinjector.json` in your project root:
+Config is loaded from `.cssinjector.json` in the project root. CLI flags on `npm run dev` (`--url`, `--dir`, `--include`, `--exclude`, `--headless`, `--strip-patterns`, `--username`, `--password`) override it.
 
 ```json
 {
-  "url": "https://www.theoutpostrv.com/",
+  "url": "https://example.com",
   "dir": "./styles",
   "include": "**/*.css",
   "exclude": "",
-  "headless": false
+  "headless": false,
+  "stripPatterns": [],
+  "username": "",
+  "password": "",
+  "chromePath": "",
+  "scripts": false,
+  "jsDir": "./scripts",
+  "jsInclude": "**/*.js"
 }
 ```
 
-CLI flags override config file values.
+| Key | Meaning |
+|---|---|
+| `url` | Target site to open |
+| `dir` / `include` / `exclude` | Where your CSS files live and which ones to load |
+| `headless` | Run Chrome headless |
+| `stripPatterns` | Remote stylesheet href patterns disabled by default (`*` wildcard), e.g. `"//cdn.example.com/*.default.css"` |
+| `username` / `password` | HTTP Basic Auth, sent only to the site's own origin |
+| `chromePath` | Override Chrome's install location (auto-detected otherwise) |
+| `scripts` / `jsDir` / `jsInclude` | Opt-in JS injection (off by default) — see "How it works" |
+
+## Commands
+
+### `npm run dev`
+
+Launches (or reuses) Chrome with a dedicated debugging profile, opens the target site, and injects your CSS. Watches `styles/` (and `scripts/`, if `scripts` is enabled) for changes and hot-reloads them with no page reload.
+
+### `npm run css -- <command>`
+
+Toggle sources on and off live, without touching a file:
+
+```bash
+npm run css -- list              # show every local file and remote stylesheet, on/off
+npm run css -- off home.css      # disable one local file
+npm run css -- on home.css       # re-enable it
+npm run css -- solo header.css   # disable every other local file
+npm run css -- remote-off-all    # see the page with none of the site's own CSS
+npm run css -- reset             # back to config defaults
+```
+
+### `npm run dbg -- <command>`
+
+A debugging toolkit for the live page — screenshots, computed styles, CSS cascade inspection, viewport emulation, and HTML previews:
+
+```bash
+npm run dbg -- screenshot                    # save a viewport screenshot to ./debug/
+npm run dbg -- why ".header" color           # which rule wins, and where it's defined
+npm run dbg -- bp md                         # emulate a Bootstrap "md" viewport
+npm run dbg -- replace ".hero" "<div>...</div>"  # preview an HTML change (undo with `restore`)
+```
+
+Run `npm run dbg -- help` for the full command list.
 
 ## How It Works
 
-1. Launches Chrome via Puppeteer with remote debugging enabled
-2. Navigates to the target URL
-3. Reads all matching `.css` files from the configured directory
-4. Injects a `<style id="css-injector">` element into the page
-5. Watches the CSS directory for changes
-6. On any file change: re-reads all CSS and instantly swaps the style content
-
-No page reload required — CSS updates are applied via DOM manipulation.
-
-## CDP Debugging
-
-The tool exposes Chrome DevTools Protocol on `http://127.0.0.1:9222` while running. You can inspect the live page using the built-in CDP client.
-
-### Commands
-
-In a separate terminal while `npm run dev` is running:
-
-```bash
-# Take a viewport screenshot
-npm run cdp -- screenshot
-
-# Take a full-page screenshot
-npm run cdp -- fullpage
-
-# Save screenshot to specific path
-npm run cdp -- screenshot ./debug/my-screenshot.png
-
-# Get computed styles for an element
-npm run cdp -- styles ".header-info"
-
-# Get element info (tag, classes, visibility, bounds)
-npm run cdp -- select ".header-info"
-
-# Get outerHTML of an element
-npm run cdp -- html ".header-info"
-
-# Get full page HTML
-npm run cdp -- html
-
-# Highlight an element with a red outline and screenshot
-npm run cdp -- highlight ".header-info"
-
-# Evaluate arbitrary JavaScript in the page
-npm run cdp -- eval "document.title"
-
-# List all element tags and their counts
-npm run cdp -- list
-```
-
-Screenshots are saved to the `./debug/` directory.
-
-## Project Structure
-
-```
-CSSInjector/
-├── src/
-│   ├── index.ts          # CLI entry point
-│   ├── types.ts          # Config types and defaults
-│   ├── css-processor.ts  # Read and combine CSS files
-│   ├── injector.ts       # Puppeteer browser and CSS injection
-│   ├── watcher.ts        # File system watcher with debounce
-│   └── cdp-client.ts     # CDP debugging client
-├── styles/               # Your CSS files go here
-├── .cssinjector.json     # Configuration
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
-```
+- CSS injection happens at **document start**, before the page's own content paints — via `Page.addScriptToEvaluateOnNewDocument`, re-applied on every navigation — so there's no flash of unstyled content and no reload needed on save.
+- Each local CSS file gets its **own `<style>` tag**; the site's own `<link>` stylesheets are toggled with `link.disabled` rather than removed, so nothing is destroyed and everything can be switched back on. `npm run css` and the injector share one small state file (`.cssinjector.state.json`) to keep this in sync live.
+- Every tool in this repo — the injector and both CLIs — connects to Chrome only through **one page's own CDP websocket**, never the browser-level websocket. That's what lets you open Chrome DevTools on the same tab at any time without interference.
 
 ## Development
 
 ```bash
-# Type check
-npm run typecheck
-
-# Build
-npm run build
-
-# Run built version
-npm start
+npm run typecheck   # type check
+npm run build        # bundle the injector with Vite
+npm start             # run the built version
 ```
 
 ## Dependencies
 
-- [Puppeteer](https://pptr.dev/) — Browser automation
-- [Chokidar](https://github.com/paulmillr/chokidar) — File watching
-- [Fast Glob](https://github.com/mrmlnc/fast-glob) — File matching
+- [Chokidar](https://github.com/paulmillr/chokidar) — file watching
+- [Fast Glob](https://github.com/mrmlnc/fast-glob) — file matching
 - [Commander](https://github.com/tj/commander.js) — CLI parsing
+- Chrome DevTools Protocol, via a minimal client in `src/cdp.ts` built on Node's built-in `WebSocket` and `fetch` — no browser-automation dependency

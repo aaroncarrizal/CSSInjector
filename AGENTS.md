@@ -4,52 +4,139 @@ This file provides context for AI agents working on the CSS Injector project.
 
 ## Project Overview
 
-CSS Injector is a CLI tool that uses Puppeteer to open a target URL in Chrome, inject local CSS files into the page, and hot-reload whenever the CSS files change on disk. It also exposes a Chrome DevTools Protocol (CDP) client for inspecting the live page.
+CSS Injector is a CLI tool that launches the system's Google Chrome with a dedicated debugging profile, injects local CSS files into a target site's page at document start (before the page's own content paints, so there's no flash of unstyled content), and hot-reloads whenever a CSS file changes on disk. Each local file gets its own `<style>` tag, and both local files and the site's own `<link>` stylesheets can be switched on and off live while the page is open. All of this — the injector, the source toggling and the debug CLI — talks to Chrome only through the **page-level** Chrome DevTools Protocol (CDP): every connection is opened directly to one page's own websocket, never to the browser-level websocket. That's deliberate — see **Rules for working on this tool** below.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Run the injector (opens Chrome, navigates to URL, injects CSS, watches for changes) |
-| `npm run cdp -- <command>` | Run CDP client commands against the running browser |
-| `npm run bp -- <size>` | Resize the page viewport to a Bootstrap breakpoint (see `breakpoint.ts`) |
-| `npm run dbg -- <command>` | Style-debugging toolkit (find/box/outline/check/preview/crop) |
+| `npm run dev` | Run the injector (launches/reuses Chrome, navigates to the URL, injects CSS, watches for changes) |
+| `npm run css -- <command>` | Toggle local files and remote stylesheets on/off while the page is open |
+| `npm run dbg -- <command>` | Debug CLI: screenshots, computed styles, CSS cascade inspection, viewport emulation, HTML preview |
+| `npm run clamp -- <px>` / `npm run vw -- <px>` / `npm run vh -- <px>` | Convert a pixel size to a `clamp()`/`vw`/`vh` value against a 1920×1080 base |
 | `npm run build` | Build with Vite |
 | `npm run typecheck` | TypeScript type checking |
 | `npm start` | Run the built version |
+
+## Fix Priority
+
+Try fixes in this order, and say in the final report which layer a fix landed in (and why, if it wasn't CSS):
+
+1. **CSS** in `styles/` — the default. Split unrelated concerns into separate files (e.g. `10-header.css`, `20-home.css`); files load in alphabetical order and the last one wins ties in the cascade.
+2. **HTML** — when markup itself has to change (an element is missing, nested wrong, or needs a new attribute). Preview the change live with `dbg replace` / `dbg inner` (see below), confirm it looks right, then hand the user the final markup to paste into the CMS — this tool never edits the CMS itself.
+3. **JS** — last resort, only when CSS and HTML genuinely can't do it (e.g. a broken third-party script, a site bug that needs a workaround). Requires `"scripts": true` in `.cssinjector.json` (default `false`); files go in `scripts/`. Must be a guarded IIFE, idempotent (it runs at document-start **and** may re-run on hot reload), and must not assume jQuery or the DOM exist yet — `window.jQuery` is undefined at document-start even on jQuery-using sites.
+
+## Fast Fix Loop
+
+The default workflow for a style request — resolve the element, understand *why* the current CSS looks the way it does, try a fix live, then commit it to a file:
+
+```
+npm run dbg -- batch <<'EOF'
+find "Reviews"
+box ".reviews"
+why ".reviews img" width
+preview ".reviews img{width:320px}"
+crop ".reviews" --at 375,1200
+preview --save styles/20-reviews.css
+EOF
+```
+
+- **Run `why` before writing an override.** `dbg why <selector> <property>` names the winning rule, its specificity, and where it comes from (`styles/<file>:<line>` for our own CSS, a URL for the site's remote CSS, `inline <style>:<line>` for the page's own embedded `<style>` blocks). That tells you whether the new rule needs `!important`, a more specific selector, or nothing at all — instead of guessing and re-checking.
+- After saving, check the injector's own terminal output for `WARNING <file>:<line> invalid declaration` (a typo like `widht:` that Chrome silently drops), and run `npm run dbg -- errors` if the page itself looks broken — it surfaces console errors/exceptions and failed network requests.
+- A screenshot URL in a request (e.g. a prnt.sc link) is only a visual hint — always resolve the real element with `find`/`box` before styling anything.
+- `dbg batch` runs several commands over one connection and prints one JSON line per command as it completes, so a whole investigation is one tool call instead of many.
+
+## Toggling CSS Sources
+
+`npm run css -- <command>` edits `.cssinjector.state.json` (gitignored); the running injector watches that file and applies changes live, with no reload:
+
+| Command | Effect |
+|---|---|
+| `list` | Show every local file and remote stylesheet, on or off |
+| `off <file\|pattern>` / `on <file\|pattern>` | Disable/enable one local file (by id, e.g. `home.css`) or one remote href pattern (`*` wildcards allowed) |
+| `solo <file>` | Disable every local file except this one |
+| `remote-off-all` / `remote-on-all` | Disable/enable every remote stylesheet — see the page with none of the site's own CSS |
+| `reset` | Back to the config defaults (`stripPatterns`) |
+
+Use this to answer "is this bug caused by our CSS or the site's?": `css solo <file>` (or `css off <file>`) to isolate our own styles, then `css remote-off-all` to rule the site's CSS in or out entirely. `.cssinjector.state.json` can also be edited directly — it holds `disabledLocal`, `disabledRemote` and `viewport`.
+
+## Debug CLI Reference (`npm run dbg`)
+
+Connects directly to the site tab's own page websocket — see **Rules for working on this tool**. Every command takes `--pretty` for indented JSON.
+
+| Command | Output |
+|---|---|
+| `find <text> [limit]` | Deepest elements containing the text, each with a suggested selector + box + text preview |
+| `box <selector>` | Box model, layout (display/flex/max-width/text-align) and the 6-level ancestor chain |
+| `why <selector> <property>` | Which rule wins for that property, its specificity and origin (`file:line`), the overridden/invalid rules, and an inherited-from fallback |
+| `rules <selector> [--ua]` | Every matched rule for the element, strongest first, with origin and declarations (`--ua` includes user-agent default rules) |
+| `styles <selector> [--all]` | Curated computed-style properties by default (layout/box/font/color); `--all` for the full computed style dump |
+| `select <selector>` | Per-element info: tag, classes, visibility, opacity, bounding box |
+| `outline [selector\|reset]` | Red outline overlay on matches (or every element) + screenshot |
+| `check <selector> [widths...]` | Per-width (default: all Bootstrap breakpoints) display/visibility/box/inViewport |
+| `screenshot [path]` / `fullpage [path]` | Screenshot the viewport / whole page |
+| `crop <selector> [path]` | Screenshot just one element |
+| `html [selector]` | outerHTML of an element, or the whole page |
+| `eval <expression>` | Evaluate JS in the page and return the JSON result |
+| `preview <css\|@file\|reset>` | Apply/replace/clear a persistent `<style id="debug-preview">` on the page |
+| `preview ... --save <path>` | Append the current preview CSS to a file inside `styles/`, then clear the preview — what was tested is exactly what gets saved |
+| `set <selector> <prop> <value>` | Append one declaration to the preview stylesheet |
+| `replace <selector> <html\|@file>` | Preview an HTML change (replaces outerHTML; backs up the original) |
+| `inner <selector> <html\|@file>` | Same, but replaces only innerHTML |
+| `restore [selector]` | Undo `replace`/`inner` (all of them, or just one selector) |
+| `bp <xs\|sm\|md\|lg\|xl\|xxl\|reset> [height]` / `resize <width> [height]` | Set (or clear) the emulated viewport — persists across navigations until `bp reset`, because it's stored in the state file and applied by the injector's own session |
+| `errors [--clear]` | Console errors/warnings, uncaught exceptions and failed/4xx+ network requests since the last navigation |
+| `batch [@file]` | Run several of the above over one connection (or pipe them via stdin), one JSON line per command |
+
+Screenshots (`screenshot`/`fullpage`/`crop`/`outline`) save to `./debug/` as JPEG, quality 70, downscaled to at most 1280px wide by default — pass `--png` for lossless or `--full-res` to skip the downscale, and `--at 375,768,1200` to capture one image per width in a single call.
+
+## Auto-Debug Workflow
+
+When the user says "help me debug X" (where X is a CSS selector), run one batch call covering `styles`, `select`, `why` (for whichever property is actually in question), and `outline`:
+
+```
+npm run dbg -- batch <<EOF
+styles "X"
+select "X"
+why "X" <property>
+outline "X"
+EOF
+```
+
+Explain the findings (computed styles, bounding box, visibility, which rule wins and from where), then **ask for permission** before applying any fix.
 
 ## Architecture
 
 ```
 src/
-├── index.ts          # CLI entry point (commander). Loads config, launches browser, registers scripts for new documents, injects CSS, starts watchers, logs CDP endpoint.
-├── injector.ts       # Puppeteer browser launch (with debuggingPort: 9222), navigation, <style> injection via page.evaluate(), <script id="js-injector"> injection for hot reload, and Page.addScriptToEvaluateOnNewDocument registration.
-├── css-processor.ts  # Reads CSS files from disk using fast-glob + readFile. Returns concatenated string.
-├── js-processor.ts   # Reads JS files (scripts/) from disk, same approach as css-processor.
-├── watcher.ts        # Chokidar file watcher. Watches a directory, debounces 100ms, calls onChange callback. Accepts a custom `reader` (CSS or JS).
-├── cdp-connection.ts # Shared CDP helpers: loads .cssinjector.json, puppeteer.connect() (with the devtools-skipping targetFilter), and getPage() which picks the site page by configured url host.
-├── cdp-client.ts     # Standalone script that connects to running Chrome via CDP (http://127.0.0.1:9222). Supports screenshot, styles, html, select, highlight, eval, list commands.
-├── breakpoint.ts     # Standalone script that resizes the page viewport to a Bootstrap 5 breakpoint (`npm run bp -- md`) or arbitrary size (`npm run bp -- resize 500 800`).
-├── debug.ts          # Standalone style-debugging toolkit (`npm run dbg`): find/box/outline/check/preview/set/crop.
-├── target-filter.ts  # `skipDevtoolsTargets` — passed to puppeteer.launch()/connect() so Puppeteer never attaches to the devtools:// frontend or chrome:// browser_ui targets.
-└── types.ts          # Config interface and defaults.
+├── index.ts        # CLI entry point (commander). Launches/reuses Chrome, connects Cdp to the
+│                    # site tab, sets up basic auth + console/network capture, syncs CSS/JS at
+│                    # document-start, watches styles/, scripts/ (opt-in) and the state file.
+├── config.ts        # Config type, defaults, and .cssinjector.json loading.
+├── chrome.ts         # Finds and spawns the system Chrome with a dedicated --user-data-dir
+│                    # (required: Chrome 136+ ignores the debug port on the default profile),
+│                    # or reuses one already listening on the port.
+├── cdp.ts            # Cdp: a minimal CDP client bound to ONE page's own websocket (never the
+│                    # browser-level websocket) — see Rules below.
+├── injector.ts       # syncCss/syncJs (register + live-apply via Page.addScriptToEvaluateOnNewDocument
+│                    # and Runtime.evaluate), applyViewport, enableBasicAuth (Fetch-based).
+├── page-runtime.ts   # The code that actually runs INSIDE the page: one <style> per local file,
+│                    # link.disabled toggling for remote sheets, a MutationObserver to reassert
+│                    # both against late-inserted site markup.
+├── state.ts          # .cssinjector.state.json (disabledLocal/disabledRemote/viewport) — the
+│                    # single source of truth for live toggling, shared by the injector and CLIs.
+├── sources.ts        # Reads local CSS/JS files as separate {id, content} entries.
+├── watcher.ts         # Generic debounced chokidar watcher.
+├── console-log.ts     # Captures console errors/exceptions/failed requests to debug/console.jsonl.
+├── css-lint.ts        # CSS.supports()-based check for invalid declarations, logged as warnings.
+├── css-cli.ts         # npm run css -- <command>
+├── dbg.ts             # npm run dbg -- <command>
+└── clamp.ts / vw.ts / vh.ts   # Standalone px → clamp()/vw/vh converters.
 ```
-
-## Script Injection
-
-Alongside CSS, the injector reads every `**/*.js` file in `./scripts/` (config: `jsDir` / `jsInclude`, defaults `"./scripts"` / `"**/*.js"`) and concatenates them into one bundle. That bundle is registered with CDP `Page.addScriptToEvaluateOnNewDocument`, so it runs on **every new document at the very start — before the page's own scripts**. On a scripts-file change the registration is swapped and the bundle is also re-injected as a `<script id="js-injector">` element into the open page so hot reload applies without navigating.
-
-Use this for DOM fixes that CSS alone cannot reach (cleaning a widget attribute, rewiring a broken API interaction, etc.). Keep scripts scoped/guarded (IIFE) since they run inside the target page, and make them idempotent — they execute at document-start AND may re-run on hot reload. Safe early-run pattern: return immediately if the DOM isn't ready and register a `DOMContentLoaded`/`load` handler (see `scripts/strip-ai-lot-param.js`, `scripts/default-filters-tab.js`). Example: `scripts/strip-ai-lot-param.js` removes a leftover `lots=NNNN` from the AI search widget's `data-base-params`, which otherwise gets appended to the `/search-assistant` URL by `ai-search-cta.js buildTargetUrl()`.
-
-Gotcha — timing-critical fixes need document-start: the site's DOMContentLoaded handlers run (and can crash) before the old `load`-event injection point, so a fix that must run *before* them (e.g. guarding a crash) only works via the `addScriptToEvaluateOnNewDocument` path. Note `window.jQuery` is not defined at document-start even though the page uses it — either guard code to run when jQuery appears (`DOMContentLoaded`/`load`/polling) or avoid jQuery in early fixes.
-
-Gotcha — hero Search button dead: the hero macro renders duplicate `id="topSearchForm"` elements (an outer shell div holding the tabs + AI widget + a hidden orphan Search button, and an inner div with the actual filter selects + the visible Search button). The site's own script binds `$('#topSearchForm').find('.SearchButton')` to the FIRST `#topSearchForm` (the shell), so only the orphan gets a handler and the visible button does nothing. Fix: `scripts/search-button-fix.js` rebinds **every** `.collapse.home-hero-search #topSearchForm .SearchButton` with equivalent `/rv-search?s=true&...` navigation (bind all — `querySelector` alone catches the hidden duplicate macro's button, which is `display:none` but still fires on a programmatic click).
-
-Gotcha — listing carousels render stacked: on `/rv-search` the site's ready batch calls `.attr("name").toLowerCase()` over `:input` collections with no missing-name guard; a nameless control makes it throw and **jQuery 1.8.3 aborts the rest of that ready batch**, so the static-unit Cycle2 init never runs and every `.unit-media-wrapper` shows its slides stacked vertically (wrapper ~1035px tall instead of ~250px). Two independent playwrights: `scripts/name-unnamed-inputs.js` names unnamed controls to keep the crash from firing (observer + a timing-free `getAttribute("name")` guard + a `$.fn.attr` hook), and `scripts/fix-unit-carousels.js` simply re-runs Cycle2 init (`$(el).cycle()`) on any uninitialized `.cycle-slideshow` after load — the deterministic fix, since the crash itself is the site's bug (reproduces on a clean browser with no injector).
 
 ## Config
 
-Config is loaded from `.cssinjector.json` in the project root. CLI flags override config file values.
+Config is loaded from `.cssinjector.json` in the project root (copy `.cssinjector.example.json` to start). CLI flags on `npm run dev` override config file values.
 
 ```json
 {
@@ -60,99 +147,26 @@ Config is loaded from `.cssinjector.json` in the project root. CLI flags overrid
   "headless": false,
   "stripPatterns": [],
   "username": "",
-  "password": ""
+  "password": "",
+  "chromePath": "",
+  "scripts": false,
+  "jsDir": "./scripts",
+  "jsInclude": "**/*.js"
 }
 ```
 
-- `username` / `password` – HTTP Basic Auth credentials. Leave empty (`""`) to disable auth. Both the injector and CDP client read these values.
-```
+- `stripPatterns` — remote stylesheet href patterns disabled by default (before any `npm run css` toggling), `*` as a wildcard, e.g. `"//assets.example.com/*.default.css"`. This is a *default*, not a permanent strip — `npm run css -- on <pattern>` re-enables it live.
+- `username` / `password` — HTTP Basic Auth credentials, answered only for the site's own origin (via a `Fetch.authRequired` handler) so they're never sent to a CDN or third-party request. Leave both `""` to disable auth.
+- `chromePath` — override Chrome's install location; leave `""` to auto-detect.
+- `scripts` — enables JS injection (see **Fix Priority**). Default `false`.
+- `jsDir` / `jsInclude` — where JS files are read from when `scripts` is `true`.
 
-## CDP Client Commands
+## Rules for Working on This Tool
 
-The CDP client connects to `http://127.0.0.1:9222` and provides these commands:
-
-| Command | Output |
-|---------|--------|
-| `screenshot [path]` | Saves PNG to `./debug/`. If no path given, auto-names with timestamp. |
-| `fullpage [path]` | Full-page screenshot |
-| `styles <selector>` | JSON with computed styles, tag, id, classList, boundingBox |
-| `html [selector]` | outerHTML string (full page if no selector) |
-| `select <selector>` | JSON with element count, per-element info (tag, classes, visible, opacity, bounds) |
-| `highlight <selector>` | Adds red outline to element, takes screenshot, saves to `./debug/` |
-| `eval <expression>` | Evaluates JS in page context, returns JSON result |
-| `list` | JSON with total element count and tag frequency map |
-| `togglestyles <pattern>` | Toggle remote stylesheets by href pattern (strips/restores `<link>` elements) |
-
-## Style Debugging Toolkit (`npm run dbg`)
-
-Use this instead of writing ad-hoc CDP probes. It connects to the running Chrome and reads/overrides styles on the live page without editing files.
-
-| Command | Output |
-|---------|--------|
-| `find <text> [limit]` | Deepest elements containing the text, each with a suggested selector + box + text preview |
-| `box <selector>` | Box model, layout (display/flex/max-width/text-align) and the 6-level ancestor chain |
-| `outline [selector\|reset]` | Red outline overlay on matches (or every element) + screenshot to `./debug/` |
-| `check <selector> [widths...]` | Per-width (default all Bootstrap breakpoints) display/visibility/opacity/box + visible/inViewport; restores the viewport |
-| `preview <css\|@file>` / `preview reset` | Apply/replace/clear a persistent `<style id="debug-preview">` on the page |
-| `set <selector> <prop> <value>` | Append one declaration to the preview stylesheet |
-| `crop <selector> [path]` | Screenshot just one element to `./debug/` |
-
-Recipes for common requests:
-
-- **"Make the image bigger / center this section"** (e.g. homepage reviews): `find "Reviews"` → pick the selector → `box "<selector>"` to see the wrapping container's `max-width`/`flex` → `preview "<selector> img{width:320px} <container>{justify-content:center}"` → `crop "<section>"` to compare. Iterate with `preview`/`set`; only write to `styles/` once it looks right.
-- **"On view 1032x1376 the header nav isn't visible"**: `check "header nav" 1032 1376` (add any width) to see `display`/`visibility`/`inViewport` at that size, then `preview` a fix and re-run `check`.
-- **"Add styles for the AI widget (mobile + desktop)"**: `find "..."` / `outline` to map the widget, `check` across breakpoints for the mobile/desktop split, `preview` the candidate CSS, then move it into `styles/` (or `snippets/ai-search-assistant/`).
-- A screenshot URL in a request (prnt.sc) is only a visual hint — always resolve the real element with `find`/`box` before styling.
-
-Gotcha — `page.evaluate()` + tsx: do not declare named functions inside the evaluate callback (e.g. `const helper = () => {}`). tsx/esbuild's `keepNames` rewrites them with a `__name()` helper that doesn't exist in the page, throwing `ReferenceError: __name is not defined`. Inline the logic or use anonymous callbacks.
-
-## Key Dependencies
-
-- `puppeteer` - Browser automation and CDP access
-- `chokidar` - File system watching
-- `fast-glob` - Glob pattern matching for CSS files
-- `commander` - CLI argument parsing
-- `tsx` - TypeScript execution (dev)
-- `vite` - Build tool
-
-## How CSS Injection Works
-
-1. Reads all `.css` files matching the include/exclude patterns from the configured directory
-2. Concatenates them into a single string
-3. Injects a `<style id="css-injector">` element into the page's `<head>`
-4. On file change: re-reads all CSS files, re-concatenates, and updates the style element's textContent
-
-## How Hot Reload Works
-
-- Chokidar watches the CSS directory for `change`, `add`, and `unlink` events
-- Changes are debounced (100ms) to avoid rapid re-injection
-- On change: the `onChange` callback re-reads all CSS and calls `injectCSS()` to swap the `<style>` tag content
-- No page reload — CSS is swapped instantly via DOM manipulation
-
-## CDP Debugging Workflow
-
-1. Run `npm run dev` in one terminal (Chrome opens with CDP on port 9222)
-2. Run `npm run cdp -- screenshot` in another terminal to take a screenshot
-3. Use `npm run cdp -- styles ".selector"` to inspect computed styles
-4. Use `npm run cdp -- highlight ".selector"` to visually identify elements
-5. Screenshots are saved to `./debug/` and can be viewed directly
-
-## Auto-Debug Workflow
-
-When the user says "help me debug X" (where X is a CSS selector), automatically:
-
-1. Run all three CDP commands in parallel:
-   ```
-   npm run cdp -- styles "<selector>"
-   npm run cdp -- select "<selector>"
-   npm run cdp -- highlight "<selector>"
-   ```
-
-2. Analyze the results and **explain the findings** (computed styles, bounding box, visibility, element count)
-
-3. **Ask for permission** before applying any CSS fix
-
-This workflow always runs all three commands regardless of the issue, to ensure full context.
+- **Connect only through `Cdp.connectToSite()` (or an already-open `Cdp` session) — a single page's own websocket, never the browser-level websocket, and never `Target.*` calls.** This is the fix for a real bug: the old Puppeteer-based version connected at the browser level and auto-attached to every target, including an open DevTools window's own frontend (itself a CDP target) — and attaching to it made it render a second, nested DevTools inside itself. A page-level connection cannot see or touch the DevTools frontend at all, so that failure mode is structurally impossible here. Don't reintroduce a browser-level connection (Puppeteer or otherwise) to "fix" something — there's almost certainly a page-level way to do it.
+- Any function passed to `cdp.evaluate(fn, ...args)` runs **inside the page**, serialized to a string. It must be entirely self-contained — no references to anything outside the function, only its own parameters.
+- CDP emulation (`Emulation.setDeviceMetricsOverride`, etc.) belongs to the connection that set it and disappears when that connection closes. A short-lived `dbg` command can't make a viewport change persist — that's why `bp`/`resize` write to the state file instead, and the injector's long-lived session applies it.
+- The TypeScript in `src/` runs directly on Node (no build step for `npm run dev`/`dbg`/`css`): relative imports use an explicit `.ts` extension, type-only imports use `import type`, and the syntax stays "erasable" (no `enum`, no `namespace`, no constructor parameter properties).
 
 ## New Dealer Setup (`/set-up`)
 
@@ -176,59 +190,31 @@ Execute:
 When the user provides a numbered list of CSS fixes/features to apply to the target site:
 
 1. **Read the existing styles** – Read all CSS files in `./styles/` to understand current state.
-2. **Process each item sequentially** – Start from item 1 and work through the list in order. Each fix gets implemented, added to a CSS file in `./styles/`, verified via the CDP client if needed.
+2. **Process each item sequentially** – Start from item 1 and work through the list in order. For each item, follow **Fix Priority** and the **Fast Fix Loop** above; the resulting CSS goes in a file under `./styles/`.
 3. **Commit each task separately** – After completing each item, commit with a message describing the fix (e.g., "fix: add hover to dealer logo on header"). Use `git add -A` and `git commit -m "..."`.
 4. **Unresolvable issues** – If an issue cannot be resolved (missing element, unclear requirement, technical limitation), note it in the final report and move to the next item.
 5. **Report** – After processing all items, report back with a summary of what was completed and any TODOs left behind.
 
-## Reusable CSS Snippets
+## AI Search Assistant Snippets
 
-Reusable, proven CSS patterns live in `snippets/css/` (NOT `styles/`). Copy the relevant pattern into a `styles/` file when a fix requires it, keeping the scoping selector (e.g. `.homepage`) intact. The self-contained **AI Search Assistant** bundle lives in its own folder, `snippets/ai-search-assistant/`.
+`snippets/ai-search-assistant/` holds the reusable markup for embedding the AI-powered search widget into a dealer's homepage hero:
 
-| File | Pattern |
+| File | Purpose |
 |------|---------|
-| `nav-transparent.css` | Transparent navbar floating over a hero: white links + text-shadow, dark dropdowns, mobile fallback |
-| `hero-overlay.css` | Hero pinned below the header as an absolute overlay: `top: var(--header-height) !important`, `min-height: 0`, 50vh (60vh on short viewports), hidden below 992px |
-| `flush-next-section.css` | Next section renders flush under the hero: `margin-top: calc(50vh - var(--nav-height))` (60vh on short viewports) |
-| `dropdown-single-tap.css` | Makes Bootstrap navbar sub-dropdowns expand on a single tap below 768px: sticky-touch `:hover` shows the menu (works around the site's jQuery `hover` handler fighting Bootstrap's click toggle, which caused double-tap) |
+| `ai-widget.html` | The hero shell template: two Umbraco macro-snippet placeholders sandwiching a `.collapse.home-hero-search` div with a `{{PLACE EXISTING SITE HERO RV SEARCH SNIPPET HERE}}` marker — paste the dealer's existing search form snippet into that marker when building the widget into a new hero. |
+| `mobile-ai-button.html` | A mobile-only (`visible-xs visible-sm`) macro-snippet holder for the AI widget's mobile entry point. |
+| `original-search.html` | Placeholder for the dealer's original (pre-AI-widget) search form snippet, for reference/rollback. Currently empty — fill it in per-dealer when doing this migration. |
 
-AI Search Assistant (its own folder, `snippets/ai-search-assistant/`):
+Gotchas for this widget:
+- **Markup contract on new builds:** the AI widget's shell must **not** reuse `id="topSearchForm"` (use `.ai-search-shell` / `#topSearchFormDesktop` / `#topSearchFormMobile` instead), and its filter container must be **`.ai-search-filters`**, not `.home-hero-search`. Otherwise the site's own `html.search-mode-ai #topSearchForm { display:none }` rule hides the widget's own ancestor in AI mode, and any theme that hides `.home-hero-search` hides the whole filter form. A legacy build still nesting the widget inside a `#topSearchForm` shell needs `html.search-mode-ai #topSearchForm:has(> .search-toggle-wrapper){display:block!important}` plus `.search-toggle-wrapper .home-hero-search{display:block!important}` until migrated.
+- **Duplicate `#topSearchForm`:** some hero macros render two elements with `id="topSearchForm"` — an outer shell (holding a hidden orphan Search button) and an inner one with the real filter selects and the visible Search button. The site's own script binds `$('#topSearchForm').find('.SearchButton')` to the *first* match, so only the hidden orphan gets a click handler and the visible button does nothing. Check with `dbg select "#topSearchForm"` (count should be 1) before assuming the button itself is broken.
+- **AI accent color:** the AI submit button, input border and sparkles icon all read `var(--ai-search-bg-color, var(--primary-bg-color, #333))`. Set `--ai-search-bg-color` once to brand them; most builds leave it undefined and fall back to `#333`.
+- The header **Search button** (`data-toggle="collapse" data-target=".top-search"`) only toggles panel visibility — it is not an AI-mode tab and doesn't switch between Filters/AI.
+- Search-form rows: bundled CSS can make the form and its rows `display: inline-block`, letting the last row + button wrap to a second line. Force `display: flex !important; flex-wrap: nowrap` on the form and `flex: 1 1 0 !important` on each row (`!important` is required — the bundled rule already targets the same properties).
 
-| File | Pattern |
-|------|---------|
-| `ai-search-modes.css` | Self-contained bundle: one-line filter form, duplicate-`#topSearchForm` nesting fix, mode-tab recolour, AI submit/input/sparkles via `--ai-search-bg-color`, mobile-only Assistant CTA, and the mobile header-Search → filters-only behaviour. Full guide: `snippets/ai-search-assistant/ai-search-modes.md` |
+## Site Gotchas Worth Knowing
 
-Key gotchas captured in these snippets:
-- The site's bundled CSS may ship `top: 7vh !important` on the hero at 992–1200px — override with `!important`.
-- `--header-height` (site-defined) vs `--nav-height` (ours, 62px/66px) are different values; the flush margin formula subtracts `--nav-height`, never `--header-height`.
-- Short-viewport (`max-height: 800px`) overrides must be placed after the base rules so the cascade wins.
-- Search-form rows: bundled CSS makes the form `display: inline-block` at desktop and the `SearchRow`s `display: inline-block`, which lets the last rows + button wrap to a second line. Force `display: flex !important` on the form with `flex-wrap: nowrap` and make each row `flex: 1 1 0 !important` so they share the line. The `display` values on the form/rows are overridden by bundled rules, so `!important` is required. (Now section 2 of `snippets/ai-search-assistant/ai-search-modes.css`.)
-- Dropdown double-tap on mobile: a bundled inline jQuery `hover` handler on `li.dropdown` adds `.open` on tap (via `mouseenter`) and Bootstrap's click toggle then removes it — one tap nets out closed. Fix via sticky touch `:hover` display (see `dropdown-single-tap.css`); never re-add `.open` styling to mobile, and force `position: static` below 768px so the menu stays in-flow.
-- AI search hero markup contract (do this on new builds): the bundle (`.search-toggle-wrapper`) must sit in a shell that does **not** reuse `id="topSearchForm"` (use `.ai-search-shell` / `#topSearchFormDesktop` / `#topSearchFormMobile`), and its filter container must be **`.ai-search-filters`** (not `.home-hero-search`). Otherwise: (a) `ai-search-cta.css`'s `html.search-mode-ai #topSearchForm { display:none }` hides the AI widget's own ancestor → AI mode renders empty, and (b) themes that hide `.home-hero-search` hide the whole filter form. Legacy builds still nesting the bundle in a `#topSearchForm` shell need `html.search-mode-ai #topSearchForm:has(> .search-toggle-wrapper){display:block!important}` + `.search-toggle-wrapper .home-hero-search{display:block!important}` until migrated. See `snippets/ai-search-assistant/ai-search-modes.css` / `.md` §1.
-- AI search accents: the AI submit button, AI input border and sparkles icon all read `var(--ai-search-bg-color, var(--primary-bg-color, #333))` from `ai-search-cta.css`; on most builds those variables are undefined so they fall back to `#333`. Set `--ai-search-bg-color` once to brand them.
-- The header Search button (`data-toggle="collapse" data-target=".top-search"`) only toggles panel visibility — it is **not** an AI-mode tab and does not switch filters/AI.
-- Debugging responsively: the CDP client connects to `pages[0]`; if a DevTools tab is open it's the first page, so the debugger targets DevTools instead of the site. When testing responsive layouts, verify at a real desktop width (e.g. CDP `Emulation.setDeviceMetricsOverride`), not the DevTools-docked viewport.
-
-## Reusable JS Snippets
-
-Reusable, proven DOM/JS fixes live in `snippets/js/` (NOT `scripts/`). Copy the relevant file into `scripts/` when a fix requires it — the injector will then register it for every new document. All snippets are guarded IIFEs and safe to run repeatedly (document-start + hot reload).
-
-| File | Pattern |
-|------|---------|
-| `name-unnamed-inputs.js` | Keeps a site crash from firing: names every unnamed form control via a MutationObserver, a timing-free `Element.prototype.getAttribute("name")` guard, and a `$.fn.attr("name")` hook. Use when the site does unguarded `.attr("name").toLowerCase()`. |
-| `fix-unit-carousels.js` | Re-runs Cycle2 init (`$(el).cycle()`) on any `.cycle-slideshow` that never initialized (no `.cycle-slide-active`). Deterministic fix when the site's own ready batch aborts before its carousel init. |
-| `search-button-fix.js` | Rebinds every `.collapse.home-hero-search #topSearchForm .SearchButton` to navigate `/rv-search?s=true&...` (works around the site binding only the first duplicate-id form's orphan button). |
-| `default-filters-tab.js` | Forces the AI-search widget's Filters tab as the default mode and clears a persisted tab choice. |
-| `strip-ai-lot-param.js` | Removes a stray `lots=NNNN` from the AI search widget's `data-base-params` before submit. |
-
-Snippet gotchas:
-- Early (document-start) scripts must not assume jQuery or DOM exists — `window.jQuery` is undefined on new documents; install jQuery hooks when it appears (poll / `DOMContentLoaded` / `load`).
-- A `MutationObserver` callback runs on a later microtask, so it cannot patch DOM the page inserts and reads *synchronously in the same task* (e.g. swap form HTML then submit). Prefer a getter/prototype guard for those.
-- jQuery 1.8.3 aborts the remaining callbacks in a ready batch when one throws — one bad handler silently kills unrelated init (carousels, tabs).
-
-## Notes
-
-- The tool uses `channel: "chrome"` to use the system Chrome installation (not Puppeteer's bundled Chromium)
-- CDP is always available on port 9222 when the injector is running
-- The `debug/` directory is created automatically when saving screenshots
-- `Ctrl+C` gracefully shuts down the browser and watcher
+- **jQuery 1.8.3 aborts the rest of a ready-batch when one handler throws.** One unrelated bug (e.g. calling `.attr("name")` on an unnamed `:input`) can silently kill carousel/tab init elsewhere on the page with no visible error — check `npm run dbg -- errors` when something *else* on the page looks broken after a change that shouldn't have touched it.
+- Bundled site CSS may ship `top: 7vh !important` on the hero at 992–1200px — an override needs `!important` too (confirm the actual winner with `dbg why`, don't assume).
+- `--header-height` (site-defined) and any `--nav-height`-style variable this project defines are **not** the same value — check both before writing a formula that mixes them.
+- Mobile dropdown double-tap: a bundled inline jQuery `hover` handler on `li.dropdown` adds `.open` on tap (via `mouseenter`), and Bootstrap's own click toggle then removes it in the same tap — net effect, it takes two taps to open. Fix via a sticky-touch `:hover` display rule instead of re-adding `.open` handling on mobile.
