@@ -1,0 +1,7 @@
+dist/
+debug/
+node_modules/
+.chrome-profile/
+package-lock.json
+# Hand-formatted TypeScript (2 spaces, semicolons, double quotes); keep Prettier off it.
+src/
