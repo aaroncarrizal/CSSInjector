@@ -172,6 +172,10 @@ Config is loaded from `.cssinjector.json` in the project root (copy `.cssinjecto
 
 When the user gives a dealer name and a build-site link (or types `/set-up`), follow the skill in [.claude/skills/set-up/SKILL.md](.claude/skills/set-up/SKILL.md). In short: slug the dealer name into a branch, create it from an up-to-date `master` and check it out, fill in `.cssinjector.json` (`url`, basic auth detected with `curl`, `stripPatterns` reset to `[]`), commit, and report back.
 
+## Custom Forms (`/custom-forms`)
+
+When the user asks to create a new lead form or update an existing one (fields, `FormType`, redirect, lead email routing), follow the skill in [.claude/skills/custom-forms/SKILL.md](.claude/skills/custom-forms/SKILL.md). In short: forms are configured by case-sensitive hidden inputs at the bottom of the form markup — `FormType` (ICC inbox label) and `AjaxTarget` (`/Forms/Ajax`, never edited) on every form, the default `RedirectUrl`/`SuccessMessage`/email-template fields, and optional `AccountOverRideEmail`. Custom questions use `jem[Group]_Field` names. Build new forms from a working form on the same site, preview with `dbg replace`, and hand the user the markup to paste into the CMS.
+
 ## List of Fixes Workflow
 
 When the user provides a numbered list of CSS fixes/features to apply to the target site:
