@@ -90,7 +90,7 @@ Keep the standard field names (`FirstName`, `Email`, `Phone`, `Zip`, `Comments`,
 
 Form-specific questions use the name format **`jem[GroupName]_Field_Name`**, e.g. `jem[RvDetails]_Year`, `jem[RvDetails]_Parts_Needed`. Use the same string for `name`, `id` and the label's `for`. Fields that share a group name are grouped together (here, the "RV Information" section). Spaces in the field part become `_`.
 
-The Parts Request template lays them out in a `.form-horizontal` with a `col-sm-5` label and a `col-sm-7` control:
+The default Parts Request form lays them out in a `.form-horizontal` with a `col-sm-5` label and a `col-sm-7` control:
 
 ```html
 <div class="form-group"><label for="jem[RvDetails]_Make" class="col-sm-5 control-label text-left">What is the Make?</label>
@@ -131,5 +131,5 @@ On a new form, pick one group name that describes the section (e.g. `jem[TradeIn
 - [ ] `RedirectUrl` points to a page that exists.
 - [ ] `AccountOverRideEmail` (if set) was confirmed by the user, and the intended "from" address is first.
 - [ ] Every required field's `data-valmsg-for` matches its input `name`. Custom fields use a consistent `jem[Group]_` prefix, and `name` = `id` = label `for`.
-- [ ] No duplicate `id`s on the page: the templates hard-code `#FirstName`, `#Email`, `#SubmitButton`, `#RedirectUrl`, etc., so a second form on the same page clashes. Check with `npm run dbg -- select "#SubmitButton"` (count should be 1).
+- [ ] No duplicate `id`s on the page: the default forms hard-code `#FirstName`, `#Email`, `#SubmitButton`, `#RedirectUrl`, etc., so a second form on the same page clashes. Check with `npm run dbg -- select "#SubmitButton"` (count should be 1).
 - [ ] Remind the user to do a real test submission after publishing and confirm it lands in ICC (and the override inbox, if set). The preview can't test that.
