@@ -1,6 +1,6 @@
 ---
 name: set-up
-description: Set up CSS Injector for a new dealer. Use when the user gives a dealer name and a build-site link (or types /set-up). Creates a slugged git branch from master, checks it out, and fills in .cssinjector.json so `npm run dev` opens that site.
+description: Set up icc-toolbox for a new dealer. Use when the user gives a dealer name and a build-site link (or types /set-up). Creates a slugged git branch from master, checks it out, and fills in .cssinjector.json so `npm run dev` opens that site.
 ---
 
 # New Dealer Setup

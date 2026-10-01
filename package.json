@@ -1,10 +1,10 @@
 {
-  "name": "css-injector",
+  "name": "icc-toolbox",
   "version": "1.0.0",
-  "description": "Inject CSS into any website with hot reload support",
+  "description": "ICC dealer-site toolbox: CSS injection with hot reload, live source toggling and a CDP debug CLI",
   "type": "module",
   "bin": {
-    "css-injector": "./dist/index.js"
+    "icc-toolbox": "./dist/index.js"
   },
   "scripts": {
     "dev": "node src/index.ts",

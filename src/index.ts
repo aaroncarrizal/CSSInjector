@@ -16,7 +16,7 @@ import { findInvalidDeclarations } from "./css-lint.ts";
 const program = new Command();
 
 program
-  .name("css-injector")
+  .name("icc-toolbox")
   .description("Inject CSS into any website with hot reload")
   .version("1.0.0")
   .option("-u, --url <url>", "Target URL to open")

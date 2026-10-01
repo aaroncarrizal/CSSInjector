@@ -1,10 +1,10 @@
 # AGENTS.md
 
-This file provides context for AI agents working on the CSS Injector project.
+This file provides context for AI agents working on icc-toolbox (formerly CSS Injector).
 
 ## Project Overview
 
-CSS Injector is a CLI tool that launches the system's Google Chrome with a dedicated debugging profile, injects local CSS files into a target site's page at document start (before the page's own content paints, so there's no flash of unstyled content), and hot-reloads whenever a CSS file changes on disk. Each local file gets its own `<style>` tag, and both local files and the site's own `<link>` stylesheets can be switched on and off live while the page is open. All of this — the injector, the source toggling and the debug CLI — talks to Chrome only through the **page-level** Chrome DevTools Protocol (CDP): every connection is opened directly to one page's own websocket, never to the browser-level websocket. That's deliberate — see **Rules for working on this tool** below.
+icc-toolbox is a CLI tool that launches the system's Google Chrome with a dedicated debugging profile, injects local CSS files into a target site's page at document start (before the page's own content paints, so there's no flash of unstyled content), and hot-reloads whenever a CSS file changes on disk. Each local file gets its own `<style>` tag, and both local files and the site's own `<link>` stylesheets can be switched on and off live while the page is open. All of this — the injector, the source toggling and the debug CLI — talks to Chrome only through the **page-level** Chrome DevTools Protocol (CDP): every connection is opened directly to one page's own websocket, never to the browser-level websocket. That's deliberate — see **Rules for working on this tool** below.
 
 ## Commands
 
