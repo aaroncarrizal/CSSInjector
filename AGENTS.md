@@ -22,9 +22,28 @@ icc-toolbox is a CLI tool that launches the system's Google Chrome with a dedica
 
 Try fixes in this order, and say in the final report which layer a fix landed in (and why, if it wasn't CSS):
 
-1. **CSS** in `styles/` — the default. Split unrelated concerns into separate files (e.g. `10-header.css`, `20-home.css`); files load in alphabetical order and the last one wins ties in the cascade.
+1. **CSS** in `styles/home.css` — the default. Follow **CSS Style Rules** below.
 2. **HTML** — when markup itself has to change (an element is missing, nested wrong, or needs a new attribute). Preview the change live with `dbg replace` / `dbg inner` (see below), confirm it looks right, then hand the user the final markup to paste into the CMS — this tool never edits the CMS itself.
 3. **JS** — last resort, only when CSS and HTML genuinely can't do it (e.g. a broken third-party script, a site bug that needs a workaround). Requires `"scripts": true` in `.cssinjector.json` (default `false`); files go in `scripts/`. Must be a guarded IIFE, idempotent (it runs at document-start **and** may re-run on hot reload), and must not assume jQuery or the DOM exist yet — `window.jQuery` is undefined at document-start even on jQuery-using sites.
+
+## CSS Style Rules
+
+1. **Always use `styles/home.css`.** Every CSS change goes in this one file — don't create new CSS files.
+2. **Add all new changes at the end of `home.css`.** Don't insert new rules into existing sections higher up, even if a related section exists.
+3. **Never import anything in `home.css`** — no `@import` of stylesheets, fonts or anything else. Use fonts and assets the site already loads.
+4. **Start each new section with a section comment:**
+   ```css
+   /*
+   =====
+   Section Name
+   =====
+   */
+   ```
+5. **Never add inline comments.** The section comment above is the only comment allowed.
+6. **Keep selectors simple and scoped to their section.** Always start the selector from the section the element lives in — a homepage section class (`.home-hero`, `.home-search`, `.home-welcome`) or a parent element's id (`#site-header`, `#site-footer`) — then go straight to the target: `.home-hero h2`, `#site-header .logo img`. No long descendant chains or stacked classes added "just in case". Write it the way a person would by hand. If `dbg why` shows the scoped selector loses, add one level of specificity, not five.
+7. **Prefer `display: flex`** for layout — over floats, `inline-block`, `table` or grid — unless a different layout is clearly better.
+8. **Use the existing brand color variables** instead of hardcoded hex values: `--primary-bg-color`, `--secondary-bg-color`, `--tertiary-bg-color`, `--accent-bg-color` and their matching `-text-color` / `-hover-color` variables, defined in `:root` at the top of `home.css`. Hardcode a color only when no variable matches.
+9. **No `text-decoration: underline` on link hover** unless the user asks for it. Every `a:hover` (and `a:focus`) rule uses `text-decoration: none`.
 
 ## Fast Fix Loop
 
@@ -37,9 +56,11 @@ box ".reviews"
 why ".reviews img" width
 preview ".reviews img{width:320px}"
 crop ".reviews" --at 375,1200
-preview --save styles/20-reviews.css
+preview --save styles/home.css
 EOF
 ```
+
+`preview --save` appends to the end of the file, which satisfies the "new changes at the end" rule — but it does not add a section comment, so add one before the saved block when it starts a new section.
 
 - **Run `why` before writing an override.** `dbg why <selector> <property>` names the winning rule, its specificity, and where it comes from (`styles/<file>:<line>` for our own CSS, a URL for the site's remote CSS, `inline <style>:<line>` for the page's own embedded `<style>` blocks). That tells you whether the new rule needs `!important`, a more specific selector, or nothing at all — instead of guessing and re-checking.
 - After saving, check the injector's own terminal output for `WARNING <file>:<line> invalid declaration` (a typo like `widht:` that Chrome silently drops), and run `npm run dbg -- errors` if the page itself looks broken — it surfaces console errors/exceptions and failed network requests.
@@ -181,7 +202,7 @@ When the user asks to create a new lead form or update an existing one (fields, 
 When the user provides a numbered list of CSS fixes/features to apply to the target site:
 
 1. **Read the existing styles** – Read all CSS files in `./styles/` to understand current state.
-2. **Process each item sequentially** – Start from item 1 and work through the list in order. For each item, follow **Fix Priority** and the **Fast Fix Loop** above; the resulting CSS goes in a file under `./styles/`.
+2. **Process each item sequentially** – Start from item 1 and work through the list in order. For each item, follow **Fix Priority** and the **Fast Fix Loop** above; the resulting CSS goes at the end of `styles/home.css` (see **CSS Style Rules**).
 3. **Commit each task separately** – After completing each item, commit with a message describing the fix (e.g., "fix: add hover to dealer logo on header"). Use `git add -A` and `git commit -m "..."`.
 4. **Unresolvable issues** – If an issue cannot be resolved (missing element, unclear requirement, technical limitation), note it in the final report and move to the next item.
 5. **Report** – After processing all items, report back with a summary of what was completed and any TODOs left behind.
